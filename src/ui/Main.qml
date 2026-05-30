@@ -259,7 +259,62 @@ Window {
 
     ]
 
-    property int activeBank: 0 // 0=Ch1-8, 1=Ch9-16, 2=Ch17-24, 3=DCA1-8
+    property var busVolumes: [ 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0 ]
+    property var busMutes: [ false, false, false, false, false, false, false, false ]
+    property var auxVolumes: [ 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0 ]
+    property var auxMutes: [ false, false, false, false, false, false, false, false ]
+
+    function getVolumeForFader(type, actualIdx) {
+        if (type === "input") return channelVolumes[actualIdx];
+        if (type === "dca") return audioCore.dcaVolumes[actualIdx];
+        if (type === "bus") return busVolumes[actualIdx];
+        if (type === "aux") return auxVolumes[actualIdx];
+        return 1.0;
+    }
+    
+    function getMuteForFader(type, actualIdx) {
+        if (type === "input") return channelMutes[actualIdx];
+        if (type === "dca") return audioCore.dcaMutes[actualIdx];
+        if (type === "bus") return busMutes[actualIdx];
+        if (type === "aux") return auxMutes[actualIdx];
+        return false;
+    }
+    
+    function setVolumeForFader(type, actualIdx, val) {
+        if (type === "input") {
+            setVolume(actualIdx, val);
+        } else if (type === "dca") {
+            audioCore.updateDCAVolume(actualIdx, val);
+        } else if (type === "bus") {
+            var temp = busVolumes;
+            temp[actualIdx] = val;
+            busVolumes = temp;
+            audioCore.notifyFaderChanged(64 + actualIdx, val);
+        } else if (type === "aux") {
+            var temp = auxVolumes;
+            temp[actualIdx] = val;
+            auxVolumes = temp;
+            audioCore.notifyFaderChanged(80 + actualIdx, val);
+        }
+    }
+    
+    function setMuteForFader(type, actualIdx, val) {
+        if (type === "input") {
+            setMute(actualIdx, val);
+        } else if (type === "dca") {
+            audioCore.updateMuteGroupState(actualIdx, val);
+        } else if (type === "bus") {
+            var temp = busMutes;
+            temp[actualIdx] = val;
+            busMutes = temp;
+        } else if (type === "aux") {
+            var temp = auxMutes;
+            temp[actualIdx] = val;
+            auxMutes = temp;
+        }
+    }
+
+    property int activeBank: 0 // 0=Ch1-8, 1=Ch9-16, 2=Ch17-24, 3=DCA1-8, 4=ASSIGN LAYER
 
     property real masterVolume: 0.8
 
@@ -1047,7 +1102,17 @@ Window {
         property bool dspPanelOpen: false
 
         property int selectedChannel: 0
-
+        property bool editLayerAssignmentsActive: (activeBank === 4)
+        property var faderAssignments: [
+            {"type": "input", "actualIndex": 0, "name": "Mic 1"},
+            {"type": "input", "actualIndex": 1, "name": "Discord Loop"},
+            {"type": "input", "actualIndex": 2, "name": "Spotify Stream"},
+            {"type": "input", "actualIndex": 3, "name": "Chrome Loop"},
+            {"type": "aux",   "actualIndex": 0, "name": "Stage Mon"},
+            {"type": "bus",   "actualIndex": 0, "name": "Mix Bus 1"},
+            {"type": "dca",   "actualIndex": 0, "name": "Drums Master"},
+            {"type": "dca",   "actualIndex": 1, "name": "Vocal Group"}
+        ]
         color: "#0a0c10"
 
         x: 460
@@ -1152,7 +1217,9 @@ Window {
 
                             { name: "CH 17 - 24", bankIdx: 2 },
 
-                            { name: "DCA 1 - 8", bankIdx: 3 }
+                            { name: "DCA 1 - 8", bankIdx: 3 },
+
+                            { name: "ASSIGN LAYER", bankIdx: 4 }
 
                         ]
 
@@ -1448,6 +1515,36 @@ Window {
 
                                 property int chIdx: activeBank * 8 + index
 
+                                
+
+                                property bool isDCA: (activeBank === 3) || (activeBank === 4 && faderAssignments[index].type === "dca")
+
+                                property bool isInput: (activeBank < 3) || (activeBank === 4 && faderAssignments[index].type === "input")
+
+                                property bool isAux: (activeBank === 4 && faderAssignments[index].type === "aux")
+
+                                property bool isBus: (activeBank === 4 && faderAssignments[index].type === "bus")
+
+                                
+
+                                property int resolvedIdx: {
+
+                                    if (activeBank === 4) {
+
+                                        return faderAssignments[index].actualIndex;
+
+                                    } else if (activeBank === 3) {
+
+                                        return index;
+
+                                    } else {
+
+                                        return chIdx;
+
+                                    }
+
+                                }
+
 
 
                                 ColumnLayout {
@@ -1466,79 +1563,103 @@ Window {
 
 
 
-                                    // Top: Channel Label & EDIT Button
+                                    // Fader Source Selector Header (only visible on ASSIGN LAYER)
 
-                                    RowLayout {
+                                    ColumnLayout {
+
+                                        Layout.fillWidth: true
 
                                         Layout.alignment: Qt.AlignHCenter
 
-                                        spacing: 6
+                                        visible: (activeBank === 4)
 
-                                        
+                                        spacing: 2
 
                                         Text {
 
-                                            text: (activeBank === 3) ? "DCA " + (index + 1) : "CH " + (chIdx + 1)
+                                            text: "FADER " + (index + 1) + " SOURCE"
 
-                                            color: "#00d084"
+                                            color: "#8a8d98"
 
-                                            font.pixelSize: 13
+                                            font.pixelSize: 7
 
                                             font.bold: true
 
-                                            Layout.alignment: Qt.AlignVCenter
+                                            Layout.alignment: Qt.AlignHCenter
 
                                         }
 
-                                        
+                                        ComboBox {
 
-                                        Button {
+                                            id: srcSelect
 
-                                            id: editBtn
+                                            Layout.fillWidth: true
 
-                                            visible: activeBank < 3
+                                            model: ["CH 1: Mic 1", "CH 2: Discord", "AUX 1: Monitor", "BUS A: Main Mix", "DCA 1: Group 1", "DCA 2: Group 2"]
 
-                                            implicitWidth: 32
+                                            currentIndex: {
 
-                                            implicitHeight: 18
+                                                var type = faderAssignments[index].type;
 
-                                            background: Rectangle {
+                                                var actIdx = faderAssignments[index].actualIndex;
 
-                                                color: (audioWin.dspPanelOpen && audioWin.selectedChannel === chIdx) ? "#00d084" : "#1a1f29"
+                                                if (type === "input" && actIdx === 0) return 0;
 
-                                                border.color: (audioWin.dspPanelOpen && audioWin.selectedChannel === chIdx) ? "#00d084" : "#252b36"
+                                                if (type === "input" && actIdx === 1) return 1;
 
-                                                radius: 3
+                                                if (type === "aux" && actIdx === 0) return 2;
 
-                                            }
+                                                if (type === "bus" && actIdx === 0) return 3;
 
-                                            contentItem: Text {
+                                                if (type === "dca" && actIdx === 0) return 4;
 
-                                                text: "EDIT"
+                                                if (type === "dca" && actIdx === 1) return 5;
 
-                                                color: (audioWin.dspPanelOpen && audioWin.selectedChannel === chIdx) ? "#ffffff" : "#8a8d98"
-
-                                                font.pixelSize: 8
-
-                                                font.bold: true
-
-                                                horizontalAlignment: Text.AlignHCenter
-
-                                                verticalAlignment: Text.AlignVCenter
+                                                return 0;
 
                                             }
 
-                                            onClicked: {
+                                            onActivated: (comboIndex) => {
 
-                                                audioWin.selectedChannel = chIdx;
+                                                var temp = faderAssignments;
 
-                                                audioWin.dspPanelOpen = true;
+                                                if (comboIndex === 0) {
+
+                                                    temp[index] = {"type": "input", "actualIndex": 0, "name": "Mic 1"};
+
+                                                } else if (comboIndex === 1) {
+
+                                                    temp[index] = {"type": "input", "actualIndex": 1, "name": "Discord Loop"};
+
+                                                } else if (comboIndex === 2) {
+
+                                                    temp[index] = {"type": "aux", "actualIndex": 0, "name": "Stage Mon"};
+
+                                                } else if (comboIndex === 3) {
+
+                                                    temp[index] = {"type": "bus", "actualIndex": 0, "name": "Mix Bus 1"};
+
+                                                } else if (comboIndex === 4) {
+
+                                                    temp[index] = {"type": "dca", "actualIndex": 0, "name": "Drums Master"};
+
+                                                } else if (comboIndex === 5) {
+
+                                                    temp[index] = {"type": "dca", "actualIndex": 1, "name": "Vocal Group"};
+
+                                                }
+
+                                                faderAssignments = temp;
 
                                             }
 
                                         }
 
                                     }
+
+
+
+
 
 
 
@@ -1654,145 +1775,130 @@ Window {
 
 
 
-                                     // Mute & Solo Button Panel (Stacked Vertically)
-
+                                                                 // Mute, Solo & EDIT Button Panel (Stacked Vertically)
                                      ColumnLayout {
-
                                          Layout.alignment: Qt.AlignHCenter
-
                                          spacing: 4
 
-
-
                                          // Mute Button (red when muted)
-
                                          Button {
-
                                              id: muteBtn
-
                                              Layout.alignment: Qt.AlignHCenter
-
-                                             implicitWidth: (activeBank === 3) ? 80 : 68
-
+                                             implicitWidth: isDCA ? 80 : 68
                                              implicitHeight: 28
-
                                              checkable: true
-
-                                             checked: (activeBank === 3) ? audioCore.dcaMutes[index] : channelMutes[chIdx]
-
-
-
-                                             background: Rectangle {
-
-                                                 color: muteBtn.checked ? "#ff3b30" : "#1a1f29"
-
-                                                 border.color: muteBtn.checked ? "#ff3b30" : "#252b36"
-
-                                                 radius: 6
-
-                                             }
-
-
-
-                                             contentItem: Text {
-
-                                                 text: "MUTE"
-
-                                                 color: muteBtn.checked ? "#ffffff" : "#ff3b30"
-
-                                                 font.pixelSize: 9
-
-                                                 font.bold: true
-
-                                                 horizontalAlignment: Text.AlignHCenter
-
-                                                 verticalAlignment: Text.AlignVCenter
-
-                                             }
-
-
-
-                                             onClicked: {
-
-                                                 logStateBeforeChange();
-
-                                                 if (activeBank === 3) {
-
-                                                     audioCore.updateMuteGroupState(index, !audioCore.dcaMutes[index]);
-
-                                                 } else {
-
-                                                     setMute(chIdx, !channelMutes[chIdx]);
-
-                                                 }
-
-                                             }
-
-                                         }
-
-
-
-                                         // Solo Button (glowing amber when active)
-
-                                         Button {
-
-                                             id: soloBtn
-
-                                             visible: activeBank < 3
-
-                                             Layout.alignment: Qt.AlignHCenter
-
-                                             implicitWidth: 68
-
-                                             implicitHeight: 28
-
-                                             checkable: true
-
-                                             checked: (chIdx < 24) ? audioCore.channelSoloStates[chIdx] : false
-
-
-
-                                             background: Rectangle {
-
-                                                 color: soloBtn.checked ? "#FFB300" : "#1a1f29"
-
-                                                 border.color: soloBtn.checked ? "#FFB300" : "#252b36"
-
-                                                 radius: 6
-
-                                             }
-
-
-
-                                             contentItem: Text {
-
-                                                 text: "SOLO"
-
-                                                 color: soloBtn.checked ? "#0a0c10" : "#FFB300"
-
-                                                 font.pixelSize: 9
-
-                                                 font.bold: true
-
-                                                 horizontalAlignment: Text.AlignHCenter
-
-                                                 verticalAlignment: Text.AlignVCenter
-
-                                             }
-
-
-
-                                             onClicked: {
-
-                                                 logStateBeforeChange();
-
-                                                 audioCore.updateChannelSoloState(chIdx, !audioCore.channelSoloStates[chIdx]);
-
-                                             }
-
-                                         }
-
-                                     }
+                                             checked: getMuteForFader(activeBank === 4 ? faderAssignments[index].type : (activeBank === 3 ? "dca" : "input"), resolvedIdx)
+
+                                              background: Rectangle {
+                                                  color: muteBtn.checked ? "#ff3b30" : "#1a1f29"
+                                                  border.color: muteBtn.checked ? "#ff3b30" : "#252b36"
+                                                  radius: 6
+                                              }
+
+                                              contentItem: Text {
+                                                  text: "MUTE"
+                                                  color: muteBtn.checked ? "#ffffff" : "#ff3b30"
+                                                  font.pixelSize: 9
+                                                  font.bold: true
+                                                  horizontalAlignment: Text.AlignHCenter
+                                                  verticalAlignment: Text.AlignVCenter
+                                              }
+
+                                              onClicked: {
+                                                  logStateBeforeChange();
+                                                  var faderType = activeBank === 4 ? faderAssignments[index].type : (activeBank === 3 ? "dca" : "input");
+                                                  setMuteForFader(faderType, resolvedIdx, !getMuteForFader(faderType, resolvedIdx));
+                                              }
+                                          }
+
+                                          // Solo Button (glowing amber when active)
+                                          Button {
+                                              id: soloBtn
+                                              visible: !isDCA
+                                              Layout.alignment: Qt.AlignHCenter
+                                              implicitWidth: 68
+                                              implicitHeight: 28
+                                              checkable: true
+                                              checked: (!isDCA && resolvedIdx < 24) ? audioCore.channelSoloStates[resolvedIdx] : false
+
+                                              background: Rectangle {
+                                                  color: soloBtn.checked ? "#FFB300" : "#1a1f29"
+                                                  border.color: soloBtn.checked ? "#FFB300" : "#252b36"
+                                                  radius: 6
+                                              }
+
+                                              contentItem: Text {
+                                                  text: "SOLO"
+                                                  color: soloBtn.checked ? "#0a0c10" : "#FFB300"
+                                                  font.pixelSize: 9
+                                                  font.bold: true
+                                                  horizontalAlignment: Text.AlignHCenter
+                                                  verticalAlignment: Text.AlignVCenter
+                                              }
+
+                                              onClicked: {
+                                                  logStateBeforeChange();
+                                                  if (!isDCA) {
+                                                      audioCore.updateChannelSoloState(resolvedIdx, !audioCore.channelSoloStates[resolvedIdx]);
+                                                  }
+                                              }
+                                          }
+
+                                          // EDIT Button (glowing green when active, matching Solo/Mute sizes!)
+                                          Button {
+                                              id: editBtn
+                                              visible: !isDCA
+                                              Layout.alignment: Qt.AlignHCenter
+                                              implicitWidth: 68
+                                              implicitHeight: 28
+                                              background: Rectangle {
+                                                  color: (audioWin.dspPanelOpen && audioWin.selectedChannel === resolvedIdx) ? "#00d084" : "#1a1f29"
+                                                  border.color: (audioWin.dspPanelOpen && audioWin.selectedChannel === resolvedIdx) ? "#00d084" : "#252b36"
+                                                  radius: 6
+                                              }
+                                              contentItem: Text {
+                                                  text: "EDIT"
+                                                  color: (audioWin.dspPanelOpen && audioWin.selectedChannel === resolvedIdx) ? "#ffffff" : "#8a8d98"
+                                                  font.pixelSize: 9
+                                                  font.bold: true
+                                                  horizontalAlignment: Text.AlignHCenter
+                                                  verticalAlignment: Text.AlignVCenter
+                                              }
+                                              onClicked: {
+                                                  audioWin.selectedChannel = resolvedIdx;
+                                                  audioWin.dspPanelOpen = true;
+                                              }
+                                          }
+                                      }
+
+                                      // Channel Label placed below the buttons ColumnLayout
+                                      Text {
+                                          text: {
+                                              if (activeBank === 4) {
+                                                  return faderAssignments[index].type.toUpperCase() + " " + (resolvedIdx + 1);
+                                              } else if (activeBank === 3) {
+                                                  return "DCA " + (index + 1);
+                                              } else {
+                                                  return "CH " + (resolvedIdx + 1);
+                                              }
+                                          }
+                                          color: {
+                                              if (activeBank === 4) {
+                                                  var type = faderAssignments[index].type;
+                                                  if (type === "input") return "#00d084";
+                                                  if (type === "bus") return "#ff9500";
+                                                  if (type === "aux") return "#00BDD6";
+                                                  return "#E040FB"; // DCA
+                                              } else if (activeBank === 3) {
+                                                  return "#E040FB";
+                                              } else {
+                                                  return "#00d084";
+                                              }
+                                          }
+                                          font.pixelSize: 11
+                                          font.bold: true
+                                          Layout.alignment: Qt.AlignHCenter
+                                      }                }
 
 
 
@@ -1960,94 +2066,79 @@ Window {
 
 
 
-                                             // Fader knob cap
-
+                                             // Fader knob cap: 3D Curved Metallic Brushed-Aluminum
                                              Rectangle {
-
                                                  id: faderKnob
-
                                                  width: 48 // 48px touch fader cap width
-
                                                  height: 24
-
-                                                 color: "#252b36"
-
-                                                 border.color: "#8a8d98"
-
-                                                 border.width: 1.5
-
                                                  radius: 4
-
+                                                 gradient: Gradient {
+                                                     GradientStop { position: 0.0; color: "#2d3139" }
+                                                     GradientStop { position: 0.15; color: "#454b57" }
+                                                     GradientStop { position: 0.35; color: "#8e96a5" }
+                                                     GradientStop { position: 0.5; color: "#f1f3f7" }
+                                                     GradientStop { position: 0.65; color: "#8e96a5" }
+                                                     GradientStop { position: 0.85; color: "#454b57" }
+                                                     GradientStop { position: 1.0; color: "#2d3139" }
+                                                 }
+                                                 border.color: "#0b0c0d"
+                                                 border.width: 1.5
                                                  anchors.horizontalCenter: parent.horizontalCenter
+                                                 y: (parent.height - height - 30) * (1.0 - getVolumeForFader(activeBank === 4 ? faderAssignments[index].type : (activeBank === 3 ? "dca" : "input"), resolvedIdx)) + 15
 
-                                                 y: (parent.height - height - 30) * (1.0 - ((activeBank === 3) ? audioCore.dcaVolumes[index] : channelVolumes[chIdx])) + 15
-
-
-
+                                                 // Center recess groove line
                                                  Rectangle {
-
-                                                     width: parent.width
-
-                                                     height: 2
-
-                                                     color: "#00d084"
-
-                                                     anchors.verticalCenter: parent.verticalCenter
-
+                                                     width: 4
+                                                     height: parent.height
+                                                     color: "#11141a"
+                                                     anchors.horizontalCenter: parent.horizontalCenter
                                                  }
 
+                                                 // Colored marker stripe based on fader type
+                                                 Rectangle {
+                                                     width: parent.width
+                                                     height: 3
+                                                     color: {
+                                                         if (activeBank === 4) {
+                                                             var type = faderAssignments[index].type;
+                                                             if (type === "input") return "#00d084";
+                                                             if (type === "bus") return "#ff9500";
+                                                             if (type === "aux") return "#00BDD6";
+                                                             return "#E040FB"; // DCA
+                                                         } else if (activeBank === 3) {
+                                                             return "#E040FB";
+                                                         } else {
+                                                             return "#00d084";
+                                                         }
+                                                     }
+                                                     anchors.verticalCenter: parent.verticalCenter
+                                                     anchors.verticalCenterOffset: -2
+                                                 }
                                              }
 
-
-
                                              // Large transparent touchscreen hit-box area
-
                                              MouseArea {
-
                                                  anchors.fill: parent
-
                                                  preventStealing: true
 
-
-
                                                  function dragValue(mouseY) {
-
                                                      var margin = 15;
-
                                                      var range = parent.height - 30;
-
                                                      var clampedY = Math.max(margin, Math.min(mouseY, parent.height - margin));
-
                                                      var val = 1.0 - (clampedY - margin) / range;
-
-                                                     if (activeBank === 3) {
-
-                                                         audioCore.updateDCAVolume(index, val);
-
-                                                     } else {
-
-                                                         setVolume(chIdx, val);
-
-                                                     }
-
+                                                     
+                                                     var faderType = activeBank === 4 ? faderAssignments[index].type : (activeBank === 3 ? "dca" : "input");
+                                                     setVolumeForFader(faderType, resolvedIdx, val);
                                                  }
 
-
-
                                                  onPressed: (mouse) => {
-
                                                      logStateBeforeChange();
-
                                                      dragValue(mouse.y);
-
                                                  }
 
                                                  onPositionChanged: (mouse) => dragValue(mouse.y)
-
                                              }
-
                                          }
-
                                      }
 
 
@@ -2057,15 +2148,10 @@ Window {
 
 
                                     Text {
-
-                                        text: Math.round(((activeBank === 3) ? audioCore.dcaVolumes[index] : channelVolumes[chIdx]) * 100) + "%"
-
+                                        text: Math.round(getVolumeForFader(activeBank === 4 ? faderAssignments[index].type : (activeBank === 3 ? "dca" : "input"), resolvedIdx) * 100) + "%"
                                         color: "#8a8d98"
-
                                         font.pixelSize: 9
-
                                         Layout.alignment: Qt.AlignHCenter
-
                                     }
 
                                 }
@@ -7964,4 +8050,4 @@ Window {
 
 }
 
-}}}
+}}
