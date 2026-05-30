@@ -2069,35 +2069,39 @@ Window {
                                              // Fader knob cap: 3D Curved Metallic Brushed-Aluminum
                                              Rectangle {
                                                  id: faderKnob
-                                                 width: 48 // 48px touch fader cap width
-                                                 height: 24
-                                                 radius: 4
+                                                 width: 44 // 44px premium touch fader cap width
+                                                 height: 28 // 28px height for solid grip
+                                                 radius: 5
                                                  gradient: Gradient {
-                                                     GradientStop { position: 0.0; color: "#2d3139" }
-                                                     GradientStop { position: 0.15; color: "#454b57" }
-                                                     GradientStop { position: 0.35; color: "#8e96a5" }
-                                                     GradientStop { position: 0.5; color: "#f1f3f7" }
-                                                     GradientStop { position: 0.65; color: "#8e96a5" }
-                                                     GradientStop { position: 0.85; color: "#454b57" }
-                                                     GradientStop { position: 1.0; color: "#2d3139" }
+                                                     orientation: Gradient.Horizontal
+                                                     GradientStop { position: 0.0; color: "#3a3f4d" }
+                                                     GradientStop { position: 0.18; color: "#7a8291" }
+                                                     GradientStop { position: 0.45; color: "#e2e6ed" }
+                                                     GradientStop { position: 0.5; color: "#ffffff" }
+                                                     GradientStop { position: 0.55; color: "#e2e6ed" }
+                                                     GradientStop { position: 0.82; color: "#7a8291" }
+                                                     GradientStop { position: 1.0; color: "#3a3f4d" }
                                                  }
-                                                 border.color: "#0b0c0d"
+                                                 border.color: "#1a1c22"
                                                  border.width: 1.5
                                                  anchors.horizontalCenter: parent.horizontalCenter
                                                  y: (parent.height - height - 30) * (1.0 - getVolumeForFader(activeBank === 4 ? faderAssignments[index].type : (activeBank === 3 ? "dca" : "input"), resolvedIdx)) + 15
 
-                                                 // Center recess groove line
+                                                 // Horizontal finger rest recess indent
                                                  Rectangle {
-                                                     width: 4
-                                                     height: parent.height
-                                                     color: "#11141a"
-                                                     anchors.horizontalCenter: parent.horizontalCenter
+                                                     width: parent.width - 6
+                                                     height: 8
+                                                     color: "#14171e"
+                                                     radius: 2
+                                                     anchors.centerIn: parent
+                                                     border.color: "#3a3d46"
+                                                     border.width: 0.5
                                                  }
 
-                                                 // Colored marker stripe based on fader type
+                                                 // Glowing alignment line inside the finger rest recess
                                                  Rectangle {
-                                                     width: parent.width
-                                                     height: 3
+                                                     width: parent.width - 10
+                                                     height: 2
                                                      color: {
                                                          if (activeBank === 4) {
                                                              var type = faderAssignments[index].type;
@@ -2111,8 +2115,7 @@ Window {
                                                              return "#00d084";
                                                          }
                                                      }
-                                                     anchors.verticalCenter: parent.verticalCenter
-                                                     anchors.verticalCenterOffset: -2
+                                                     anchors.centerIn: parent
                                                  }
                                              }
 
@@ -2163,8 +2166,6 @@ Window {
                     }
 
                 }
-
-            }
 
 
 
@@ -2369,36 +2370,59 @@ Window {
 
 
                             Rectangle {
-
                                 id: masterKnob
-
-                                width: 52
-
-                                height: 26
-
-                                color: "#2c3545"
-
-                                border.color: "#ffffff"
-
+                                width: 48 // Matching premium width
+                                height: 30 // Solid height
+                                radius: 5
+                                gradient: Gradient {
+                                    orientation: Gradient.Horizontal
+                                    GradientStop { position: 0.0; color: "#4a2d2d" }
+                                    GradientStop { position: 0.18; color: "#8a5757" }
+                                    GradientStop { position: 0.45; color: "#fcdada" }
+                                    GradientStop { position: 0.5; color: "#ffffff" }
+                                    GradientStop { position: 0.55; color: "#fcdada" }
+                                    GradientStop { position: 0.82; color: "#8a5757" }
+                                    GradientStop { position: 1.0; color: "#4a2d2d" }
+                                }
+                                border.color: "#2b1414"
                                 border.width: 1.5
-
-                                radius: 4
-
                                 anchors.horizontalCenter: parent.horizontalCenter
-
                                 y: (parent.height - height - 30) * (1.0 - masterVolume) + 15
 
 
+                                // Horizontal finger rest recess indent (Master dark red recess)
 
                                 Rectangle {
 
-                                    width: parent.width
+                                    width: parent.width - 6
+
+                                    height: 8
+
+                                    color: "#1a0808"
+
+                                    radius: 2
+
+                                    anchors.centerIn: parent
+
+                                    border.color: "#4a2525"
+
+                                    border.width: 0.5
+
+                                }
+
+
+
+                                // Glowing Master Red indicator line inside the recess
+
+                                Rectangle {
+
+                                    width: parent.width - 10
 
                                     height: 2
 
                                     color: "#ff3b30"
 
-                                    anchors.verticalCenter: parent.verticalCenter
+                                    anchors.centerIn: parent
 
                                 }
 
@@ -8050,4 +8074,4 @@ Window {
 
 }
 
-}}
+}}}
