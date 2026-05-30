@@ -115,6 +115,8 @@ add_executable(overwatch_studio
     src/ui/VideoCanvasMock.h
     src/ui/ShowBuilderBridge.cpp
     src/ui/ShowBuilderBridge.h
+    src/core/audio/WindowsProcessCapture.cpp
+    src/core/audio/WindowsProcessCapture.h
 )
 
 qt_add_qml_module(overwatch_studio

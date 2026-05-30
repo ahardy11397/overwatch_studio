@@ -521,3 +521,34 @@ QVariantList AudioEngineBridge::getActivePatches() const {
     }
     return res;
 }
+
+QVariantMap AudioEngineBridge::availableProcesses() const {
+    QVariantMap map;
+    map["Discord.exe"] = 1420;
+    map["chrome.exe"] = 9812;
+    map["spotify.exe"] = 4322;
+    return map;
+}
+
+void AudioEngineBridge::startApplicationCapture(int channelIdx, QString processName, int pid) {
+    if (channelIdx < 0 || channelIdx >= 32) return;
+    
+    // Stop any existing capture on this channel first
+    stopApplicationCapture(channelIdx);
+    
+    m_processCaptures[channelIdx] = std::make_unique<WindowsProcessCapture>();
+    m_processCaptures[channelIdx]->start(static_cast<DWORD>(pid), uiToDspQueue);
+    
+    RealtimeLogger::getInstance().log("Starting process capture on CH " + std::to_string(channelIdx) + 
+                                      " (" + processName.toStdString() + ", PID: " + std::to_string(pid) + ")");
+}
+
+void AudioEngineBridge::stopApplicationCapture(int channelIdx) {
+    if (channelIdx < 0 || channelIdx >= 32) return;
+    
+    if (m_processCaptures[channelIdx]) {
+        m_processCaptures[channelIdx]->stop();
+        m_processCaptures[channelIdx].reset();
+        RealtimeLogger::getInstance().log("Stopping process capture on CH " + std::to_string(channelIdx));
+    }
+}

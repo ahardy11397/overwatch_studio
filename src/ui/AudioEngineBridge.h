@@ -11,6 +11,8 @@
 #include <chrono>
 #include <array>
 #include "../core/control/SPSCQueue.h"
+#include "../core/audio/WindowsProcessCapture.h"
+#include <memory>
 
 class AudioEngineBridge : public QObject {
     Q_OBJECT
@@ -26,6 +28,7 @@ class AudioEngineBridge : public QObject {
     Q_PROPERTY(QVariantList availableDevices READ availableDevices CONSTANT)
     Q_PROPERTY(int activeSampleRate READ activeSampleRate WRITE setActiveSampleRate NOTIFY deviceSettingsChanged)
     Q_PROPERTY(int activeBufferSize READ activeBufferSize WRITE setActiveBufferSize NOTIFY deviceSettingsChanged)
+    Q_PROPERTY(QVariantMap availableProcesses READ availableProcesses NOTIFY processesChanged)
     
     // External Control Surface Diagnostics properties
     Q_PROPERTY(int oscPort READ oscPort CONSTANT)
@@ -138,6 +141,10 @@ public:
     Q_INVOKABLE void unpatchRoute(int src, int dest);
     Q_INVOKABLE void configureDevice(QString driver, QString deviceName, int sampleRate, int bufferSize);
     Q_INVOKABLE QVariantList getActivePatches() const;
+
+    QVariantMap availableProcesses() const;
+    Q_INVOKABLE void startApplicationCapture(int channelIdx, QString processName, int pid);
+    Q_INVOKABLE void stopApplicationCapture(int channelIdx);
 
     int oscPort() const { return 8000; }
     bool midiConnected() const { return m_midiConnected; }
@@ -277,6 +284,7 @@ signals:
     void controlSurfaceChanged();
     void deviceSettingsChanged();
     void patchesChanged();
+    void processesChanged();
     
     void dcaVolumesChanged();
     void dcaMutesChanged();
@@ -410,4 +418,6 @@ private:
     // Simulated real-time background audio thread
     std::atomic<bool> m_running{true};
     std::jthread m_simulatedAudioThread;
+
+    std::array<std::unique_ptr<WindowsProcessCapture>, 32> m_processCaptures;
 };
