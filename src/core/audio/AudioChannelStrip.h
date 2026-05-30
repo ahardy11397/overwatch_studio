@@ -14,13 +14,21 @@
 #include <cmath>
 #include <array>
 
+enum class ChannelType : uint8_t {
+    Input,
+    Bus,
+    Aux,
+    FX,
+    DCA
+};
+
 /**
 * @class AudioChannelStrip
 * @brief Pre-allocated single channel processing block executing dynamic DSP pipeline modules natively in real-time.
 */
 class AudioChannelStrip {
 public:
-    AudioChannelStrip() noexcept : sampleRate(48000.0f), hpfCutoff(80.0f), volumeTarget(1.0f) {
+    AudioChannelStrip() noexcept : sampleRate(48000.0f), hpfCutoff(80.0f), volumeTarget(1.0f), type(ChannelType::Input) {
         faderSmoother.reset(1.0f);
         delayLine.setDelayMs(0.0f, sampleRate);
     }
@@ -53,8 +61,14 @@ public:
     * @brief Main realtime-safe DSP processing pipeline for the channel strip.
     */
     void processBlock(float* samples, size_t numSamples) noexcept REALTIME_SAFE {
-        // 1. Apply Lip Sync Delay
-        delayLine.processBlock(samples, numSamples);
+        if (type == ChannelType::DCA) {
+            return;
+        }
+
+        // 1. Apply Lip Sync Delay (only for Input)
+        if (type == ChannelType::Input) {
+            delayLine.processBlock(samples, numSamples);
+        }
 
         // 2. High-Pass Filter (HPF)
         float w0 = 2.0f * 3.14159265f * hpfCutoff / sampleRate;
@@ -71,8 +85,10 @@ public:
             samples[i] = (b0 / a0) * samples[i]; // Apply basic highpass scaling
         }
 
-        // 3. Noise Gate
-        applyGate(samples, numSamples);
+        // 3. Noise Gate (only for Input)
+        if (type == ChannelType::Input) {
+            applyGate(samples, numSamples);
+        }
 
         // 4. Equalization
         applyEQ(samples, numSamples);
@@ -120,4 +136,5 @@ public:
     float volumeTarget;
     ParameterSmoother faderSmoother;
     AVSyncDelayLine delayLine;
+    ChannelType type = ChannelType::Input;
 };

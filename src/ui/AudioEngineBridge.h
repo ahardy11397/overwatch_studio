@@ -1,3 +1,4 @@
+// Touch for Task 1: Summing Engine & C++ Device Selector
 #pragma once
 
 #include <QObject>
