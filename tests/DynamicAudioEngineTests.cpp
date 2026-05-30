@@ -19,13 +19,17 @@ protected:
 
 // 1. Verify that the channelPool is allocated safely and faderStrips are mapped correctly
 TEST_F(DynamicAudioEngineTest, VerifyPreallocatedPools) {
+    std::cout << "[TEST LOG] Before make_unique<AudioEngineCore>" << std::endl;
     auto core = std::make_unique<AudioEngineCore>();
+    std::cout << "[TEST LOG] After make_unique<AudioEngineCore>" << std::endl;
 
     // Check that channel pool size matches expected PoolSize
     auto& pool = core->getChannelPool();
+    std::cout << "[TEST LOG] Pool size: " << pool.size() << std::endl;
     EXPECT_EQ(pool.size(), AudioEngineCore::PoolSize);
 
     // Verify channel pool type initialization
+    std::cout << "[TEST LOG] Verifying pool channel types" << std::endl;
     for (size_t i = 0; i < AudioEngineCore::MaxInputs; ++i) {
         EXPECT_EQ(pool[i].type, ChannelType::Input);
     }
@@ -43,6 +47,7 @@ TEST_F(DynamicAudioEngineTest, VerifyPreallocatedPools) {
     }
 
     // Verify faderStrips mapping (24 inputs, 8 DCAs)
+    std::cout << "[TEST LOG] Verifying faderStrips mapping" << std::endl;
     auto& faderStrips = core->getFaderStrips();
     EXPECT_EQ(faderStrips.size(), 32);
 
@@ -58,6 +63,7 @@ TEST_F(DynamicAudioEngineTest, VerifyPreallocatedPools) {
         EXPECT_EQ(faderStrips[24 + i]->type, ChannelType::DCA);
         EXPECT_EQ(faderStrips[24 + i], &pool[dcaStartIdx + i]);
     }
+    std::cout << "[TEST LOG] VerifyPreallocatedPools completed successfully" << std::endl;
 }
 
 // 2. Verify that type tags conditionally alter the DSP processing block (e.g. lip-sync delay bypass)
