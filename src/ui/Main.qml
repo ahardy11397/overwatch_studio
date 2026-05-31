@@ -1102,16 +1102,63 @@ Window {
         property bool dspPanelOpen: false
 
         property int selectedChannel: 0
-        property bool editLayerAssignmentsActive: (activeBank === 4)
+        property bool editLayerAssignmentsActive: false
         property var faderAssignments: [
-            {"type": "input", "actualIndex": 0, "name": "Mic 1"},
-            {"type": "input", "actualIndex": 1, "name": "Discord Loop"},
-            {"type": "input", "actualIndex": 2, "name": "Spotify Stream"},
-            {"type": "input", "actualIndex": 3, "name": "Chrome Loop"},
-            {"type": "aux",   "actualIndex": 0, "name": "Stage Mon"},
-            {"type": "bus",   "actualIndex": 0, "name": "Mix Bus 1"},
-            {"type": "dca",   "actualIndex": 0, "name": "Drums Master"},
-            {"type": "dca",   "actualIndex": 1, "name": "Vocal Group"}
+            // Bank 0 (default: CH 1-8)
+            [
+                {"type": "input", "actualIndex": 0, "name": "Mic 1"},
+                {"type": "input", "actualIndex": 1, "name": "Mic 2"},
+                {"type": "input", "actualIndex": 2, "name": "Mic 3"},
+                {"type": "input", "actualIndex": 3, "name": "Mic 4"},
+                {"type": "input", "actualIndex": 4, "name": "Mic 5"},
+                {"type": "input", "actualIndex": 5, "name": "Mic 6"},
+                {"type": "input", "actualIndex": 6, "name": "Mic 7"},
+                {"type": "input", "actualIndex": 7, "name": "Mic 8"}
+            ],
+            // Bank 1 (default: CH 9-16)
+            [
+                {"type": "input", "actualIndex": 8, "name": "Mic 9"},
+                {"type": "input", "actualIndex": 9, "name": "Mic 10"},
+                {"type": "input", "actualIndex": 10, "name": "Mic 11"},
+                {"type": "input", "actualIndex": 11, "name": "Mic 12"},
+                {"type": "input", "actualIndex": 12, "name": "Mic 13"},
+                {"type": "input", "actualIndex": 13, "name": "Mic 14"},
+                {"type": "input", "actualIndex": 14, "name": "Mic 15"},
+                {"type": "input", "actualIndex": 15, "name": "Mic 16"}
+            ],
+            // Bank 2 (default: CH 17-24)
+            [
+                {"type": "input", "actualIndex": 16, "name": "Mic 17"},
+                {"type": "input", "actualIndex": 17, "name": "Mic 18"},
+                {"type": "input", "actualIndex": 18, "name": "Mic 19"},
+                {"type": "input", "actualIndex": 19, "name": "Mic 20"},
+                {"type": "input", "actualIndex": 20, "name": "Mic 21"},
+                {"type": "input", "actualIndex": 21, "name": "Mic 22"},
+                {"type": "input", "actualIndex": 22, "name": "Mic 23"},
+                {"type": "input", "actualIndex": 23, "name": "Mic 24"}
+            ],
+            // Bank 3 (default: DCA 1-8)
+            [
+                {"type": "dca", "actualIndex": 0, "name": "DCA 1"},
+                {"type": "dca", "actualIndex": 1, "name": "DCA 2"},
+                {"type": "dca", "actualIndex": 2, "name": "DCA 3"},
+                {"type": "dca", "actualIndex": 3, "name": "DCA 4"},
+                {"type": "dca", "actualIndex": 4, "name": "DCA 5"},
+                {"type": "dca", "actualIndex": 5, "name": "DCA 6"},
+                {"type": "dca", "actualIndex": 6, "name": "DCA 7"},
+                {"type": "dca", "actualIndex": 7, "name": "DCA 8"}
+            ],
+            // Bank 4 (default custom layout)
+            [
+                {"type": "input", "actualIndex": 0, "name": "Mic 1"},
+                {"type": "input", "actualIndex": 1, "name": "Discord Loop"},
+                {"type": "input", "actualIndex": 2, "name": "Spotify Stream"},
+                {"type": "input", "actualIndex": 3, "name": "Chrome Loop"},
+                {"type": "aux",   "actualIndex": 0, "name": "Stage Mon"},
+                {"type": "bus",   "actualIndex": 0, "name": "Mix Bus 1"},
+                {"type": "dca",   "actualIndex": 0, "name": "Drums Master"},
+                {"type": "dca",   "actualIndex": 1, "name": "Vocal Group"}
+            ]
         ]
         color: "#0a0c10"
 
@@ -1517,33 +1564,19 @@ Window {
 
                                 
 
-                                property bool isDCA: (activeBank === 3) || (activeBank === 4 && faderAssignments[index].type === "dca")
+                                property bool isDCA: faderAssignments[activeBank][index].type === "dca"
 
-                                property bool isInput: (activeBank < 3) || (activeBank === 4 && faderAssignments[index].type === "input")
+                                property bool isInput: faderAssignments[activeBank][index].type === "input"
 
-                                property bool isAux: (activeBank === 4 && faderAssignments[index].type === "aux")
+                                property bool isAux: faderAssignments[activeBank][index].type === "aux"
 
-                                property bool isBus: (activeBank === 4 && faderAssignments[index].type === "bus")
+                                property bool isBus: faderAssignments[activeBank][index].type === "bus"
+
+                                property bool isFX: faderAssignments[activeBank][index].type === "fx"
 
                                 
 
-                                property int resolvedIdx: {
-
-                                    if (activeBank === 4) {
-
-                                        return faderAssignments[index].actualIndex;
-
-                                    } else if (activeBank === 3) {
-
-                                        return index;
-
-                                    } else {
-
-                                        return chIdx;
-
-                                    }
-
-                                }
+                                property int resolvedIdx: faderAssignments[activeBank][index].actualIndex
 
 
 
@@ -1563,7 +1596,7 @@ Window {
 
 
 
-                                    // Fader Source Selector Header (only visible on ASSIGN LAYER)
+                                    // Fader Source Selector Header
 
                                     ColumnLayout {
 
@@ -1571,7 +1604,7 @@ Window {
 
                                         Layout.alignment: Qt.AlignHCenter
 
-                                        visible: (activeBank === 4)
+                                        visible: audioWin.editLayerAssignmentsActive
 
                                         spacing: 2
 
@@ -1595,66 +1628,67 @@ Window {
 
                                             Layout.fillWidth: true
 
-                                            model: ["CH 1: Mic 1", "CH 2: Discord", "AUX 1: Monitor", "BUS A: Main Mix", "DCA 1: Group 1", "DCA 2: Group 2"]
+                                            model: [
+                                                "CH 1: Mic 1",
+                                                "CH 2: Mic 2",
+                                                "CH 3: Discord Loop",
+                                                "CH 4: Spotify Stream",
+                                                "CH 5: Chrome Loop",
+                                                "CH 6: Sound Effects",
+                                                "AUX 1: Stage Monitor",
+                                                "AUX 2: FX Send 1",
+                                                "BUS A: Stereo Master",
+                                                "BUS B: Sub Group",
+                                                "DCA 1: Drums Master",
+                                                "DCA 2: Vocal Group",
+                                                "DCA 3: BGM Group"
+                                            ]
 
                                             currentIndex: {
-
-                                                var type = faderAssignments[index].type;
-
-                                                var actIdx = faderAssignments[index].actualIndex;
-
-                                                if (type === "input" && actIdx === 0) return 0;
-
-                                                if (type === "input" && actIdx === 1) return 1;
-
-                                                if (type === "aux" && actIdx === 0) return 2;
-
-                                                if (type === "bus" && actIdx === 0) return 3;
-
-                                                if (type === "dca" && actIdx === 0) return 4;
-
-                                                if (type === "dca" && actIdx === 1) return 5;
-
+                                                var type = faderAssignments[activeBank][index].type;
+                                                var actIdx = faderAssignments[activeBank][index].actualIndex;
+                                                if (type === "input") {
+                                                    if (actIdx === 0) return 0;
+                                                    if (actIdx === 1) return 1;
+                                                    if (actIdx === 2) return 2;
+                                                    if (actIdx === 3) return 3;
+                                                    if (actIdx === 4) return 4;
+                                                    if (actIdx === 5) return 5;
+                                                } else if (type === "aux") {
+                                                    if (actIdx === 0) return 6;
+                                                    if (actIdx === 1) return 7;
+                                                } else if (type === "bus") {
+                                                    if (actIdx === 0) return 8;
+                                                    if (actIdx === 1) return 9;
+                                                } else if (type === "dca") {
+                                                    if (actIdx === 0) return 10;
+                                                    if (actIdx === 1) return 11;
+                                                    if (actIdx === 2) return 12;
+                                                }
                                                 return 0;
-
                                             }
 
                                             onActivated: (comboIndex) => {
-
-                                                var temp = faderAssignments;
-
-                                                if (comboIndex === 0) {
-
-                                                    temp[index] = {"type": "input", "actualIndex": 0, "name": "Mic 1"};
-
-                                                } else if (comboIndex === 1) {
-
-                                                    temp[index] = {"type": "input", "actualIndex": 1, "name": "Discord Loop"};
-
-                                                } else if (comboIndex === 2) {
-
-                                                    temp[index] = {"type": "aux", "actualIndex": 0, "name": "Stage Mon"};
-
-                                                } else if (comboIndex === 3) {
-
-                                                    temp[index] = {"type": "bus", "actualIndex": 0, "name": "Mix Bus 1"};
-
-                                                } else if (comboIndex === 4) {
-
-                                                    temp[index] = {"type": "dca", "actualIndex": 0, "name": "Drums Master"};
-
-                                                } else if (comboIndex === 5) {
-
-                                                    temp[index] = {"type": "dca", "actualIndex": 1, "name": "Vocal Group"};
-
-                                                }
-
+                                                var temp = JSON.parse(JSON.stringify(faderAssignments));
+                                                var newObj = {"type": "input", "actualIndex": 0, "name": "Mic 1"};
+                                                if (comboIndex === 0) newObj = {"type": "input", "actualIndex": 0, "name": "Mic 1"};
+                                                else if (comboIndex === 1) newObj = {"type": "input", "actualIndex": 1, "name": "Mic 2"};
+                                                else if (comboIndex === 2) newObj = {"type": "input", "actualIndex": 2, "name": "Discord Loop"};
+                                                else if (comboIndex === 3) newObj = {"type": "input", "actualIndex": 3, "name": "Spotify Stream"};
+                                                else if (comboIndex === 4) newObj = {"type": "input", "actualIndex": 4, "name": "Chrome Loop"};
+                                                else if (comboIndex === 5) newObj = {"type": "input", "actualIndex": 5, "name": "Sound Effects"};
+                                                else if (comboIndex === 6) newObj = {"type": "aux", "actualIndex": 0, "name": "Stage Mon"};
+                                                else if (comboIndex === 7) newObj = {"type": "aux", "actualIndex": 1, "name": "FX Send 1"};
+                                                else if (comboIndex === 8) newObj = {"type": "bus", "actualIndex": 0, "name": "Stereo Mas"};
+                                                else if (comboIndex === 9) newObj = {"type": "bus", "actualIndex": 1, "name": "Sub Group"};
+                                                else if (comboIndex === 10) newObj = {"type": "dca", "actualIndex": 0, "name": "Drums Mast"};
+                                                else if (comboIndex === 11) newObj = {"type": "dca", "actualIndex": 1, "name": "Vocal Grou"};
+                                                else if (comboIndex === 12) newObj = {"type": "dca", "actualIndex": 2, "name": "BGM Group"};
+                                                
+                                                temp[activeBank][index] = newObj;
                                                 faderAssignments = temp;
-
                                             }
-
                                         }
-
                                     }
 
 
@@ -1759,7 +1793,7 @@ Window {
 
                                     Text {
 
-                                        visible: activeBank === 3
+                                        visible: isDCA
 
                                         text: "DCA MASTER"
 
@@ -1782,34 +1816,34 @@ Window {
 
                                          // Mute Button (red when muted)
                                          Button {
-                                             id: muteBtn
-                                             Layout.alignment: Qt.AlignHCenter
-                                             implicitWidth: isDCA ? 80 : 68
-                                             implicitHeight: 28
-                                             checkable: true
-                                             checked: getMuteForFader(activeBank === 4 ? faderAssignments[index].type : (activeBank === 3 ? "dca" : "input"), resolvedIdx)
+                                              id: muteBtn
+                                              Layout.alignment: Qt.AlignHCenter
+                                              implicitWidth: isDCA ? 80 : 68
+                                              implicitHeight: 28
+                                              checkable: true
+                                              checked: getMuteForFader(faderAssignments[activeBank][index].type, resolvedIdx)
 
-                                              background: Rectangle {
-                                                  color: muteBtn.checked ? "#ff3b30" : "#1a1f29"
-                                                  border.color: muteBtn.checked ? "#ff3b30" : "#252b36"
-                                                  radius: 6
-                                              }
+                                               background: Rectangle {
+                                                   color: muteBtn.checked ? "#ff3b30" : "#1a1f29"
+                                                   border.color: muteBtn.checked ? "#ff3b30" : "#252b36"
+                                                   radius: 6
+                                               }
 
-                                              contentItem: Text {
-                                                  text: "MUTE"
-                                                  color: muteBtn.checked ? "#ffffff" : "#ff3b30"
-                                                  font.pixelSize: 9
-                                                  font.bold: true
-                                                  horizontalAlignment: Text.AlignHCenter
-                                                  verticalAlignment: Text.AlignVCenter
-                                              }
+                                               contentItem: Text {
+                                                   text: "MUTE"
+                                                   color: muteBtn.checked ? "#ffffff" : "#ff3b30"
+                                                   font.pixelSize: 9
+                                                   font.bold: true
+                                                   horizontalAlignment: Text.AlignHCenter
+                                                   verticalAlignment: Text.AlignVCenter
+                                               }
 
-                                              onClicked: {
-                                                  logStateBeforeChange();
-                                                  var faderType = activeBank === 4 ? faderAssignments[index].type : (activeBank === 3 ? "dca" : "input");
-                                                  setMuteForFader(faderType, resolvedIdx, !getMuteForFader(faderType, resolvedIdx));
-                                              }
-                                          }
+                                               onClicked: {
+                                                   logStateBeforeChange();
+                                                   var faderType = faderAssignments[activeBank][index].type;
+                                                   setMuteForFader(faderType, resolvedIdx, !getMuteForFader(faderType, resolvedIdx));
+                                               }
+                                           }
 
                                           // Solo Button (glowing amber when active)
                                           Button {
@@ -1874,27 +1908,18 @@ Window {
                                       // Channel Label placed below the buttons ColumnLayout
                                       Text {
                                           text: {
-                                              if (activeBank === 4) {
-                                                  return faderAssignments[index].type.toUpperCase() + " " + (resolvedIdx + 1);
-                                              } else if (activeBank === 3) {
-                                                  return "DCA " + (index + 1);
-                                              } else {
-                                                  return "CH " + (resolvedIdx + 1);
-                                              }
+                                              var type = faderAssignments[activeBank][index].type;
+                                              if (type === "input") return "CH " + (resolvedIdx + 1);
+                                              return type.toUpperCase() + " " + (resolvedIdx + 1);
                                           }
-                                          color: {
-                                              if (activeBank === 4) {
-                                                  var type = faderAssignments[index].type;
-                                                  if (type === "input") return "#00d084";
-                                                  if (type === "bus") return "#ff9500";
-                                                  if (type === "aux") return "#00BDD6";
-                                                  return "#E040FB"; // DCA
-                                              } else if (activeBank === 3) {
-                                                  return "#E040FB";
-                                              } else {
-                                                  return "#00d084";
-                                              }
-                                          }
+                                                                                     color: {
+                                               var type = faderAssignments[activeBank][index].type;
+                                               if (type === "input") return "#00d084";
+                                               if (type === "bus") return "#ff9500";
+                                               if (type === "aux") return "#00BDD6";
+                                               if (type === "dca") return "#E040FB";
+                                               return "#8a8d98";
+                                           }
                                           font.pixelSize: 11
                                           font.bold: true
                                           Layout.alignment: Qt.AlignHCenter
@@ -2001,24 +2026,14 @@ Window {
                                                  width: parent.width
 
                                                  height: {
+                                                      var faderType = faderAssignments[activeBank][index].type;
+                                                      if (audioCore.fadeToBlack || getMuteForFader(faderType, resolvedIdx)) return 0;
 
-                                                     if (audioCore.fadeToBlack || ((activeBank === 3) ? audioCore.dcaMutes[index] : channelMutes[chIdx])) return 0;
+                                                      var activityVal = audioCore.peakMeter * (Math.sin(audioWin.m_frameCount * 0.12 + resolvedIdx) * 0.15 + 0.85) * getVolumeForFader(faderType, resolvedIdx);
 
-                                                     var activityVal;
+                                                      return Math.max(0, Math.min(1.0, activityVal)) * parent.height;
 
-                                                     if (activeBank === 3) {
-
-                                                         activityVal = audioCore.peakMeter * (Math.sin(audioWin.m_frameCount * 0.12 + index) * 0.15 + 0.85) * audioCore.dcaVolumes[index];
-
-                                                     } else {
-
-                                                         activityVal = audioCore.peakMeter * (Math.sin(audioWin.m_frameCount * 0.12 + chIdx) * 0.15 + 0.85) * channelVolumes[chIdx];
-
-                                                     }
-
-                                                     return Math.max(0, Math.min(1.0, activityVal)) * parent.height;
-
-                                                 }
+                                                  }
 
                                                  anchors.bottom: parent.bottom
 
@@ -2085,7 +2100,7 @@ Window {
                                                  border.color: "#1a1c22"
                                                  border.width: 1.5
                                                  anchors.horizontalCenter: parent.horizontalCenter
-                                                 y: (parent.height - height - 30) * (1.0 - getVolumeForFader(activeBank === 4 ? faderAssignments[index].type : (activeBank === 3 ? "dca" : "input"), resolvedIdx)) + 15
+                                                 y: (parent.height - height - 30) * (1.0 - getVolumeForFader(faderAssignments[activeBank][index].type, resolvedIdx)) + 15
 
                                                  // Horizontal finger rest recess indent
                                                  Rectangle {
@@ -2096,26 +2111,21 @@ Window {
                                                      anchors.centerIn: parent
                                                      border.color: "#3a3d46"
                                                      border.width: 0.5
-                                                 }
 
-                                                 // Glowing alignment line inside the finger rest recess
-                                                 Rectangle {
-                                                     width: parent.width - 10
-                                                     height: 2
-                                                     color: {
-                                                         if (activeBank === 4) {
-                                                             var type = faderAssignments[index].type;
+                                                     // Glowing alignment line inside the finger rest recess
+                                                     Rectangle {
+                                                         width: parent.width - 10
+                                                         height: 2
+                                                         color: {
+                                                             var type = faderAssignments[activeBank][index].type;
                                                              if (type === "input") return "#00d084";
                                                              if (type === "bus") return "#ff9500";
                                                              if (type === "aux") return "#00BDD6";
-                                                             return "#E040FB"; // DCA
-                                                         } else if (activeBank === 3) {
-                                                             return "#E040FB";
-                                                         } else {
-                                                             return "#00d084";
+                                                             if (type === "dca") return "#E040FB";
+                                                             return "#8a8d98";
                                                          }
+                                                         anchors.centerIn: parent
                                                      }
-                                                     anchors.centerIn: parent
                                                  }
                                              }
 
@@ -2130,7 +2140,7 @@ Window {
                                                      var clampedY = Math.max(margin, Math.min(mouseY, parent.height - margin));
                                                      var val = 1.0 - (clampedY - margin) / range;
                                                      
-                                                     var faderType = activeBank === 4 ? faderAssignments[index].type : (activeBank === 3 ? "dca" : "input");
+                                                     var faderType = faderAssignments[activeBank][index].type;
                                                      setVolumeForFader(faderType, resolvedIdx, val);
                                                  }
 
@@ -2151,7 +2161,7 @@ Window {
 
 
                                     Text {
-                                        text: Math.round(getVolumeForFader(activeBank === 4 ? faderAssignments[index].type : (activeBank === 3 ? "dca" : "input"), resolvedIdx) * 100) + "%"
+                                        text: Math.round(getVolumeForFader(faderAssignments[activeBank][index].type, resolvedIdx) * 100) + "%"
                                         color: "#8a8d98"
                                         font.pixelSize: 9
                                         Layout.alignment: Qt.AlignHCenter
