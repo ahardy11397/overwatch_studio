@@ -1560,23 +1560,23 @@ Window {
 
 
 
-                                property int chIdx: activeBank * 8 + index
+                                property int chIdx: root.activeBank * 8 + index
 
                                 
 
-                                property bool isDCA: faderAssignments[activeBank][index].type === "dca"
+                                property bool isDCA: audioWin.faderAssignments[root.activeBank][index].type === "dca"
 
-                                property bool isInput: faderAssignments[activeBank][index].type === "input"
+                                property bool isInput: audioWin.faderAssignments[root.activeBank][index].type === "input"
 
-                                property bool isAux: faderAssignments[activeBank][index].type === "aux"
+                                property bool isAux: audioWin.faderAssignments[root.activeBank][index].type === "aux"
 
-                                property bool isBus: faderAssignments[activeBank][index].type === "bus"
+                                property bool isBus: audioWin.faderAssignments[root.activeBank][index].type === "bus"
 
-                                property bool isFX: faderAssignments[activeBank][index].type === "fx"
+                                property bool isFX: audioWin.faderAssignments[root.activeBank][index].type === "fx"
 
                                 
 
-                                property int resolvedIdx: faderAssignments[activeBank][index].actualIndex
+                                property int resolvedIdx: audioWin.faderAssignments[root.activeBank][index].actualIndex
 
 
 
@@ -1645,8 +1645,8 @@ Window {
                                             ]
 
                                             currentIndex: {
-                                                var type = faderAssignments[activeBank][index].type;
-                                                var actIdx = faderAssignments[activeBank][index].actualIndex;
+                                                var type = audioWin.faderAssignments[root.activeBank][index].type;
+                                                var actIdx = audioWin.faderAssignments[root.activeBank][index].actualIndex;
                                                 if (type === "input") {
                                                     if (actIdx === 0) return 0;
                                                     if (actIdx === 1) return 1;
@@ -1669,7 +1669,7 @@ Window {
                                             }
 
                                             onActivated: (comboIndex) => {
-                                                var temp = JSON.parse(JSON.stringify(faderAssignments));
+                                                var temp = JSON.parse(JSON.stringify(audioWin.faderAssignments));
                                                 var newObj = {"type": "input", "actualIndex": 0, "name": "Mic 1"};
                                                 if (comboIndex === 0) newObj = {"type": "input", "actualIndex": 0, "name": "Mic 1"};
                                                 else if (comboIndex === 1) newObj = {"type": "input", "actualIndex": 1, "name": "Mic 2"};
@@ -1685,8 +1685,8 @@ Window {
                                                 else if (comboIndex === 11) newObj = {"type": "dca", "actualIndex": 1, "name": "Vocal Grou"};
                                                 else if (comboIndex === 12) newObj = {"type": "dca", "actualIndex": 2, "name": "BGM Group"};
                                                 
-                                                temp[activeBank][index] = newObj;
-                                                faderAssignments = temp;
+                                                temp[root.activeBank][index] = newObj;
+                                                audioWin.faderAssignments = temp;
                                             }
                                         }
                                     }
@@ -1707,7 +1707,7 @@ Window {
 
                                         height: 12
 
-                                        visible: activeBank < 3
+                                        visible: root.activeBank < 3
 
 
 
@@ -1821,7 +1821,7 @@ Window {
                                               implicitWidth: isDCA ? 80 : 68
                                               implicitHeight: 28
                                               checkable: true
-                                              checked: getMuteForFader(faderAssignments[activeBank][index].type, resolvedIdx)
+                                              checked: getMuteForFader(audioWin.faderAssignments[root.activeBank][index].type, resolvedIdx)
 
                                                background: Rectangle {
                                                    color: muteBtn.checked ? "#ff3b30" : "#1a1f29"
@@ -1840,7 +1840,7 @@ Window {
 
                                                onClicked: {
                                                    logStateBeforeChange();
-                                                   var faderType = faderAssignments[activeBank][index].type;
+                                                   var faderType = audioWin.faderAssignments[root.activeBank][index].type;
                                                    setMuteForFader(faderType, resolvedIdx, !getMuteForFader(faderType, resolvedIdx));
                                                }
                                            }
@@ -1908,12 +1908,12 @@ Window {
                                       // Channel Label placed below the buttons ColumnLayout
                                       Text {
                                           text: {
-                                              var type = faderAssignments[activeBank][index].type;
+                                              var type = audioWin.faderAssignments[root.activeBank][index].type;
                                               if (type === "input") return "CH " + (resolvedIdx + 1);
                                               return type.toUpperCase() + " " + (resolvedIdx + 1);
                                           }
                                                                                      color: {
-                                               var type = faderAssignments[activeBank][index].type;
+                                               var type = audioWin.faderAssignments[root.activeBank][index].type;
                                                if (type === "input") return "#00d084";
                                                if (type === "bus") return "#ff9500";
                                                if (type === "aux") return "#00BDD6";
@@ -1933,7 +1933,7 @@ Window {
 
                                          Layout.alignment: Qt.AlignHCenter
 
-                                         visible: (activeBank < 3) && (chIdx < 24)
+                                         visible: (root.activeBank < 3) && (chIdx < 24)
 
                                          width: 50
 
@@ -2026,7 +2026,7 @@ Window {
                                                  width: parent.width
 
                                                  height: {
-                                                      var faderType = faderAssignments[activeBank][index].type;
+                                                      var faderType = audioWin.faderAssignments[root.activeBank][index].type;
                                                       if (audioCore.fadeToBlack || getMuteForFader(faderType, resolvedIdx)) return 0;
 
                                                       var activityVal = audioCore.peakMeter * (Math.sin(audioWin.m_frameCount * 0.12 + resolvedIdx) * 0.15 + 0.85) * getVolumeForFader(faderType, resolvedIdx);
@@ -2100,7 +2100,7 @@ Window {
                                                  border.color: "#1a1c22"
                                                  border.width: 1.5
                                                  anchors.horizontalCenter: parent.horizontalCenter
-                                                 y: (parent.height - height - 30) * (1.0 - getVolumeForFader(faderAssignments[activeBank][index].type, resolvedIdx)) + 15
+                                                 y: (parent.height - height - 30) * (1.0 - getVolumeForFader(audioWin.faderAssignments[root.activeBank][index].type, resolvedIdx)) + 15
 
                                                  // Horizontal finger rest recess indent
                                                  Rectangle {
@@ -2117,7 +2117,7 @@ Window {
                                                          width: parent.width - 10
                                                          height: 2
                                                          color: {
-                                                             var type = faderAssignments[activeBank][index].type;
+                                                             var type = audioWin.faderAssignments[root.activeBank][index].type;
                                                              if (type === "input") return "#00d084";
                                                              if (type === "bus") return "#ff9500";
                                                              if (type === "aux") return "#00BDD6";
@@ -2140,7 +2140,7 @@ Window {
                                                      var clampedY = Math.max(margin, Math.min(mouseY, parent.height - margin));
                                                      var val = 1.0 - (clampedY - margin) / range;
                                                      
-                                                     var faderType = faderAssignments[activeBank][index].type;
+                                                     var faderType = audioWin.faderAssignments[root.activeBank][index].type;
                                                      setVolumeForFader(faderType, resolvedIdx, val);
                                                  }
 
@@ -2161,7 +2161,7 @@ Window {
 
 
                                     Text {
-                                        text: Math.round(getVolumeForFader(faderAssignments[activeBank][index].type, resolvedIdx) * 100) + "%"
+                                        text: Math.round(getVolumeForFader(audioWin.faderAssignments[root.activeBank][index].type, resolvedIdx) * 100) + "%"
                                         color: "#8a8d98"
                                         font.pixelSize: 9
                                         Layout.alignment: Qt.AlignHCenter
