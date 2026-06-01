@@ -1456,7 +1456,33 @@ Window {
 
                         Item { Layout.fillWidth: true }
 
-
+                        Button {
+                            id: editLayerBtn
+                            implicitWidth: 160
+                            implicitHeight: 28
+                            checkable: true
+                            checked: audioWin.editLayerAssignmentsActive
+                            
+                            background: Rectangle {
+                                color: editLayerBtn.checked ? "#00d084" : "#1a1f29"
+                                border.color: editLayerBtn.checked ? "#00d084" : "#252b36"
+                                border.width: 1.5
+                                radius: 6
+                            }
+                            
+                            contentItem: Text {
+                                text: editLayerBtn.checked ? "⚙ EDITING FADERS (ACTIVE)" : "⚙ CUSTOMIZE FADERS"
+                                color: editLayerBtn.checked ? "#0a0c10" : "#8a8d98"
+                                font.pixelSize: 9
+                                font.bold: true
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                            }
+                            
+                            onClicked: {
+                                audioWin.editLayerAssignmentsActive = !audioWin.editLayerAssignmentsActive;
+                            }
+                        }
 
                         Button {
 
@@ -1923,9 +1949,7 @@ Window {
                                           font.pixelSize: 11
                                           font.bold: true
                                           Layout.alignment: Qt.AlignHCenter
-                                      }                }
-
-
+                                      }                
 
                                      // Solo Mode (PFL/AFL) Selector Badge
 
@@ -2165,6 +2189,7 @@ Window {
                                         color: "#8a8d98"
                                         font.pixelSize: 9
                                         Layout.alignment: Qt.AlignHCenter
+                                    }
                                     }
 
                                 }
