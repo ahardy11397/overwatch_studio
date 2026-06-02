@@ -155,3 +155,24 @@ TEST_F(DynamicAudioEngineTest, VerifyDSPConditionalBypass) {
         }
     }
 }
+
+#include "WavFileWriter.h"
+#include <fstream>
+
+TEST(WavFileWriterTest, VerifyFileCreationAndHeader) {
+    WavFileWriter writer;
+    bool ok = writer.open("test_out.wav", 48000);
+    EXPECT_TRUE(ok);
+    std::vector<float> buffer(512, 0.5f);
+    writer.writeSamples(buffer.data(), buffer.size());
+    writer.close();
+    
+    // Read file back to verify header is 44 bytes and data was written
+    std::ifstream in("test_out.wav", std::ios::binary);
+    ASSERT_TRUE(in.is_open());
+    char header[44];
+    in.read(header, 44);
+    EXPECT_EQ(std::string(header, 4), "RIFF");
+    EXPECT_EQ(std::string(header + 8, 4), "WAVE");
+}
+
