@@ -307,10 +307,12 @@ Window {
             var temp = busMutes;
             temp[actualIdx] = val;
             busMutes = temp;
+            audioCore.setChannelMuted(64 + actualIdx, val);
         } else if (type === "aux") {
             var temp = auxMutes;
             temp[actualIdx] = val;
             auxMutes = temp;
+            audioCore.setChannelMuted(80 + actualIdx, val);
         }
     }
 
@@ -412,6 +414,7 @@ Window {
         if (index === 24) {
 
             masterMute = val;
+            audioCore.setChannelMuted(24, val);
 
             return;
 
@@ -422,6 +425,7 @@ Window {
         temp[index] = val;
 
         channelMutes = temp;
+        audioCore.setChannelMuted(index, val);
 
     }
 
@@ -2057,9 +2061,22 @@ Window {
                                                       var faderType = audioWin.faderAssignments[root.activeBank][index].type;
                                                       if (audioCore.fadeToBlack || getMuteForFader(faderType, resolvedIdx)) return 0;
 
-                                                      var activityVal = audioCore.peakMeter * (Math.sin(audioWin.m_frameCount * 0.12 + resolvedIdx) * 0.15 + 0.85) * getVolumeForFader(faderType, resolvedIdx);
-
-                                                      return Math.max(0, Math.min(1.0, activityVal)) * parent.height;
+                                                      var peak = 0.0;
+                                                      if (faderType === "input" && audioCore.channelPeaks && resolvedIdx < audioCore.channelPeaks.length) {
+                                                          peak = audioCore.channelPeaks[resolvedIdx];
+                                                      } else if (faderType === "bus" && audioCore.busPeaks && resolvedIdx < audioCore.busPeaks.length) {
+                                                          peak = audioCore.busPeaks[resolvedIdx];
+                                                      } else if (faderType === "aux" && audioCore.auxPeaks && resolvedIdx < audioCore.auxPeaks.length) {
+                                                          peak = audioCore.auxPeaks[resolvedIdx];
+                                                      } else if (faderType === "dca") {
+                                                          var dcaMask = 1 << resolvedIdx;
+                                                          for (var ch = 0; ch < 24; ++ch) {
+                                                              if ((audioCore.channelDcaMasks[ch] & dcaMask) && audioCore.channelPeaks && ch < audioCore.channelPeaks.length) {
+                                                                  peak = Math.max(peak, audioCore.channelPeaks[ch]);
+                                                              }
+                                                          }
+                                                      }
+                                                      return Math.max(0, Math.min(1.0, peak)) * parent.height;
 
                                                   }
 
@@ -2360,7 +2377,7 @@ Window {
 
                                     if (audioCore.fadeToBlack || masterMute) return 0;
 
-                                    return Math.max(0, Math.min(1.0, audioCore.peakMeter * masterVolume)) * parent.height;
+                                    return Math.max(0, Math.min(1.0, audioCore.masterPeak)) * parent.height;
 
                                 }
 
