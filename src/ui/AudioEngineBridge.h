@@ -12,6 +12,7 @@
 #include <array>
 #include "../core/control/SPSCQueue.h"
 #include "../core/audio/WindowsProcessCapture.h"
+#include "../core/audio/AudioRecorderManager.h"
 #include <memory>
 
 class AudioEngineBridge : public QObject {
@@ -29,6 +30,8 @@ class AudioEngineBridge : public QObject {
     Q_PROPERTY(int activeSampleRate READ activeSampleRate WRITE setActiveSampleRate NOTIFY deviceSettingsChanged)
     Q_PROPERTY(int activeBufferSize READ activeBufferSize WRITE setActiveBufferSize NOTIFY deviceSettingsChanged)
     Q_PROPERTY(QVariantMap availableProcesses READ availableProcesses NOTIFY processesChanged)
+    Q_PROPERTY(bool recordArmed READ recordArmed NOTIFY recordArmedChanged)
+    Q_PROPERTY(bool recordingActive READ recordingActive NOTIFY recordingActiveChanged)
     
     // External Control Surface Diagnostics properties
     Q_PROPERTY(int oscPort READ oscPort CONSTANT)
@@ -129,6 +132,12 @@ public:
     bool usingFallback() const { return m_usingFallback; }
     int historySize() const { return m_historySize; }
     bool undoActive() const { return m_undoActive; }
+    bool recordArmed() const { return m_recordArmed; }
+    bool recordingActive() const { return m_recordingActive; }
+
+    Q_INVOKABLE void armRecording(bool armed);
+    Q_INVOKABLE void triggerRecording(bool active);
+    Q_INVOKABLE void configureShowChannels(int numInputs, int numBuses, int numAuxes, int numDCAs);
 
     QVariantList availableDrivers() const { return { "ASIO (Low-Latency)", "WASAPI Shared", "DirectSound" }; }
     QVariantList availableDevices() const { return { "Dante Virtual Soundcard", "ASIO Focusrite USB", "Built-in Sound Device" }; }
@@ -285,6 +294,8 @@ signals:
     void deviceSettingsChanged();
     void patchesChanged();
     void processesChanged();
+    void recordArmedChanged();
+    void recordingActiveChanged();
     
     void dcaVolumesChanged();
     void dcaMutesChanged();
@@ -420,4 +431,7 @@ private:
     std::jthread m_simulatedAudioThread;
 
     std::array<std::unique_ptr<WindowsProcessCapture>, 32> m_processCaptures;
+    bool m_recordArmed = false;
+    bool m_recordingActive = false;
+    std::unique_ptr<AudioRecorderManager> m_recorderManager;
 };

@@ -9,10 +9,14 @@
 #include "../core/control/RealtimeLogger.h"
 #include <cstdlib>
 #include <QDebug>
+#include <QDateTime>
 
 AudioEngineBridge::AudioEngineBridge(QObject* parent) 
     : QObject(parent), uiToDspQueue(1024), dspToUiQueue(1024) {
     
+    m_recorderManager = std::make_unique<AudioRecorderManager>();
+    m_recorderManager->initialize(24, "recording_session_" + QDateTime::currentDateTime().toString("yyyy-MM-dd_hhmmss").toStdString());
+
     m_running = true;
     m_simulatedAudioThread = std::jthread([this](std::stop_token stopToken) {
         while (!stopToken.stop_requested() && m_running.load()) {
@@ -551,4 +555,30 @@ void AudioEngineBridge::stopApplicationCapture(int channelIdx) {
         m_processCaptures[channelIdx].reset();
         RealtimeLogger::getInstance().log("Stopping process capture on CH " + std::to_string(channelIdx));
     }
+}
+
+void AudioEngineBridge::armRecording(bool armed) {
+    if (m_recordArmed != armed) {
+        m_recordArmed = armed;
+        emit recordArmedChanged();
+    }
+}
+
+void AudioEngineBridge::triggerRecording(bool active) {
+    if (m_recordingActive != active) {
+        m_recordingActive = active;
+        emit recordingActiveChanged();
+        if (active) {
+            m_recorderManager->startSession(static_cast<uint32_t>(m_activeSampleRate));
+        } else {
+            m_recorderManager->stopSession();
+        }
+    }
+}
+
+void AudioEngineBridge::configureShowChannels(int numInputs, int numBuses, int numAuxes, int numDCAs) {
+    RealtimeLogger::getInstance().log("Reconfiguring Show Channels: Ins=" + std::to_string(numInputs) +
+                                      ", Buses=" + std::to_string(numBuses) +
+                                      ", Auxes=" + std::to_string(numAuxes) +
+                                      ", DCAs=" + std::to_string(numDCAs));
 }
