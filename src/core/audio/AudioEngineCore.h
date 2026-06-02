@@ -37,6 +37,8 @@ public:
 #include <juce_audio_devices/juce_audio_devices.h>
 #endif
 #include "RoutingPatchMap.h"
+#include "../control/SPSCQueue.h"
+#include <random>
 
 class AudioEngineCore : public juce::AudioIODeviceCallback {
 public:
@@ -50,9 +52,20 @@ public:
     static constexpr size_t MaxDCAs = 32;
     static constexpr size_t PoolSize = MaxInputs + MaxBuses + MaxAuxes + MaxFX + MaxDCAs;
 
-    AudioEngineCore() noexcept : activeSampleRate(48000.0f) {
+    AudioEngineCore() noexcept : activeSampleRate(48000.0f), uiToDspQueue(1024) {
         inputBufferPtrs.fill(nullptr);
         outputBufferPtrs.fill(nullptr);
+
+        // Initialize maps and queues
+        inputPatchMap.fill(AudioSourcePatch{AudioSourceType::None, 0});
+        outputPatchMap.fill(OutputPatch{false, 0});
+        dcaVolumes.fill(1.0f);
+        dcaMutes.fill(false);
+        channelDcaMasks.fill(0);
+
+        for (size_t i = 0; i < 24; ++i) {
+            appCaptureQueues[i] = std::make_unique<SPSCQueue<float>>(16384);
+        }
 
         // Initialize pool item types
         for (size_t i = 0; i < MaxInputs; ++i) {
@@ -71,7 +84,7 @@ public:
             channelPool[MaxInputs + MaxBuses + MaxAuxes + MaxFX + i].type = ChannelType::DCA;
         }
 
-        // Initialize faderStrips pointers: 24 inputs, 8 DCAs
+        // Initialize faderStrips pointers
         for (size_t i = 0; i < 24; ++i) {
             faderStrips[i] = &channelPool[i];
         }
@@ -89,6 +102,61 @@ public:
         RealtimeLogger::getInstance().log("AudioEngineCore callback stopped.");
     }
 
+    SPSCQueue<RoutingCommand>& getCommandQueue() noexcept { return uiToDspQueue; }
+
+    SPSCQueue<float>* getAppCaptureQueue(size_t channelIdx) noexcept {
+        if (channelIdx >= 24) return nullptr;
+        return appCaptureQueues[channelIdx].get();
+    }
+
+    void setInputPatch(uint32_t channelIdx, AudioSourceType type, uint32_t index) noexcept {
+        if (channelIdx < 24) {
+            inputPatchMap[channelIdx] = AudioSourcePatch{type, index};
+        }
+    }
+
+    void setRoute(uint32_t src, uint32_t dest, float gain, TapPoint tap) noexcept {
+        routingMatrix.setRoute(src, dest, gain, tap);
+    }
+
+    void unpatchRoute(uint32_t src, uint32_t dest) noexcept {
+        routingMatrix.setRoute(src, dest, 0.0f, TapPoint::PostFader);
+    }
+
+    void setOutputPatch(uint32_t hwOutputIdx, uint32_t busIdx) noexcept {
+        if (hwOutputIdx < 8) {
+            outputPatchMap[hwOutputIdx] = OutputPatch{true, busIdx};
+        }
+    }
+
+    void clearOutputPatch(uint32_t hwOutputIdx) noexcept {
+        if (hwOutputIdx < 8) {
+            outputPatchMap[hwOutputIdx] = OutputPatch{false, 0};
+        }
+    }
+
+    void updateChannelDCAMapping(uint32_t chIdx, uint32_t dcaIdx, bool active) noexcept {
+        if (chIdx < 24 && dcaIdx < 8) {
+            if (active) {
+                channelDcaMasks[chIdx] |= (1 << dcaIdx);
+            } else {
+                channelDcaMasks[chIdx] &= ~(1 << dcaIdx);
+            }
+        }
+    }
+
+    void updateDCAVolume(uint32_t dcaIdx, float volume) noexcept {
+        if (dcaIdx < 8) {
+            dcaVolumes[dcaIdx] = volume;
+        }
+    }
+
+    void updateDCAMute(uint32_t dcaIdx, bool mute) noexcept {
+        if (dcaIdx < 8) {
+            dcaMutes[dcaIdx] = mute;
+        }
+    }
+
     void audioDeviceIOCallbackWithContext(
         const float** inputChannelData, int numInputChannels,
         float** outputChannelData, int numOutputChannels,
@@ -96,43 +164,163 @@ public:
     ) override REALTIME_SAFE {
         (void)context;
         size_t samples = static_cast<size_t>(numSamples);
-        size_t inputs = std::min(static_cast<size_t>(numInputChannels), InputChannelsCount);
-        size_t outputs = std::min(static_cast<size_t>(numOutputChannels), OutputChannelsCount);
+        size_t hardwareInputs = std::min(static_cast<size_t>(numInputChannels), InputChannelsCount);
+        size_t hardwareOutputs = std::min(static_cast<size_t>(numOutputChannels), OutputChannelsCount);
 
-        // 1. Map pointers safely with bounds checking
-        for (size_t i = 0; i < InputChannelsCount; ++i) {
-            inputBufferPtrs[i] = (i < inputs && inputChannelData[i]) ? inputChannelData[i] : dummyBuffer.data();
-        }
-        for (size_t o = 0; o < OutputChannelsCount; ++o) {
-            outputBufferPtrs[o] = (o < outputs && outputChannelData[o]) ? outputChannelData[o] : dummySummingBuffer.data();
-            std::fill_n(outputBufferPtrs[o], samples, 0.0f);
-        }
-
-        // 2. Process channel strips (In-place) using faderStrips pointers
-        for (size_t c = 0; c < inputs; ++c) {
-            float* dest = outputBufferPtrs[c % outputs];
-            std::copy_n(inputBufferPtrs[c], samples, dest);
-            if (c < faderStrips.size() && faderStrips[c] != nullptr) {
-                faderStrips[c]->processBlock(dest, samples);
+        // 1. Process SPSC commands from the UI thread
+        while (auto cmdOpt = uiToDspQueue.pop()) {
+            const auto& cmd = *cmdOpt;
+            switch (cmd.type) {
+                case RoutingCommandType::SetInputPatch:
+                    setInputPatch(cmd.channelIdx, static_cast<AudioSourceType>(cmd.targetIdx), cmd.flag);
+                    break;
+                case RoutingCommandType::SetRoute:
+                    setRoute(cmd.channelIdx, cmd.targetIdx, cmd.gain, static_cast<TapPoint>(cmd.flag));
+                    break;
+                case RoutingCommandType::UnpatchRoute:
+                    unpatchRoute(cmd.channelIdx, cmd.targetIdx);
+                    break;
+                case RoutingCommandType::SetOutputPatch:
+                    if (cmd.flag != 0) {
+                        setOutputPatch(cmd.channelIdx, cmd.targetIdx);
+                    } else {
+                        clearOutputPatch(cmd.channelIdx);
+                    }
+                    break;
+                case RoutingCommandType::SetDCAMapping:
+                    updateChannelDCAMapping(cmd.channelIdx, cmd.targetIdx, cmd.flag != 0);
+                    break;
+                case RoutingCommandType::SetDCAVolume:
+                    updateDCAVolume(cmd.channelIdx, cmd.gain);
+                    break;
+                case RoutingCommandType::SetDCAMute:
+                    updateDCAMute(cmd.channelIdx, cmd.flag != 0);
+                    break;
             }
         }
 
-        // 3. Process matrix sums
-        std::span<const float*> sourceSpan(inputBufferPtrs.data(), InputChannelsCount);
-        std::span<float*> destSpan(outputBufferPtrs.data(), OutputChannelsCount);
-        routingMatrix.process(sourceSpan, destSpan, samples);
+        // Initialize output buffer pointers to silence first
+        for (size_t o = 0; o < OutputChannelsCount; ++o) {
+            outputBufferPtrs[o] = (o < hardwareOutputs && outputChannelData[o]) ? outputChannelData[o] : dummySummingBuffer.data();
+            std::fill_n(outputBufferPtrs[o], samples, 0.0f);
+        }
 
-        // 4. Limiter safety
-        for (size_t o = 0; o < outputs; ++o) {
+        // 2. Stage 1: Input Patching (Source -> Temp Channels)
+        alignas(16) std::array<std::array<float, 256>, 24> channelBuffers{};
+        for (size_t c = 0; c < 24; ++c) {
+            float* dest = channelBuffers[c].data();
+            const auto& patch = inputPatchMap[c];
+
+            if (patch.type == AudioSourceType::Hardware) {
+                const float* hwSrc = (patch.index < hardwareInputs && inputChannelData[patch.index]) ? inputChannelData[patch.index] : dummyBuffer.data();
+                std::copy_n(hwSrc, samples, dest);
+            } else if (patch.type == AudioSourceType::Generator) {
+                if (patch.index == 0) { // 1kHz Sine
+                    const float freq = 1000.0f;
+                    const float phaseInc = 2.0f * 3.14159265f * freq / activeSampleRate;
+                    for (size_t s = 0; s < samples; ++s) {
+                        dest[s] = 0.5f * std::sin(sinePhase);
+                        sinePhase += phaseInc;
+                        if (sinePhase >= 2.0f * 3.14159265f) sinePhase -= 2.0f * 3.14159265f;
+                    }
+                } else { // Pink Noise (Paul Kellet's refined method)
+                    for (size_t s = 0; s < samples; ++s) {
+                        float white = (static_cast<float>(rand()) / static_cast<float>(RAND_MAX)) * 2.0f - 1.0f;
+                        pinkB0 = 0.99886f * pinkB0 + white * 0.0555179f;
+                        pinkB1 = 0.99332f * pinkB1 + white * 0.0750759f;
+                        pinkB2 = 0.96900f * pinkB2 + white * 0.1538520f;
+                        pinkB3 = 0.86650f * pinkB3 + white * 0.3104856f;
+                        pinkB4 = 0.55000f * pinkB4 + white * 0.5329522f;
+                        pinkB5 = -0.7616f * pinkB5 - white * 0.0168980f;
+                        float pink = pinkB0 + pinkB1 + pinkB2 + pinkB3 + pinkB4 + pinkB5 + pinkB6 + white * 0.5362f;
+                        pinkB6 = white * 0.115926f;
+                        dest[s] = pink * 0.11f; // Normalize roughly to -12dBFS
+                    }
+                }
+            } else if (patch.type == AudioSourceType::AppCapture) {
+                // Pull from dedicated process capture queue
+                auto* queue = appCaptureQueues[c].get();
+                for (size_t s = 0; s < samples; ++s) {
+                    if (auto sampleOpt = queue->pop()) {
+                        dest[s] = *sampleOpt;
+                    } else {
+                        dest[s] = 0.0f;
+                    }
+                }
+            } else {
+                std::fill_n(dest, samples, 0.0f);
+            }
+        }
+
+        // 3. Stage 2: Channel Strip DSP & DCA Scaling
+        for (size_t c = 0; c < 24; ++c) {
+            float* buf = channelBuffers[c].data();
+            
+            // Scale volume target based on DCA mapping
+            float dcaGainMultiplier = 1.0f;
+            bool dcaMutedActive = false;
+            uint32_t mask = channelDcaMasks[c];
+            for (size_t d = 0; d < 8; ++d) {
+                if (mask & (1 << d)) {
+                    dcaGainMultiplier *= dcaVolumes[d];
+                    if (dcaMutes[d]) {
+                        dcaMutedActive = true;
+                    }
+                }
+            }
+
+            if (faderStrips[c] != nullptr) {
+                // Apply standard channel DSP
+                faderStrips[c]->processBlock(buf, samples);
+                
+                // Apply DCA Gain multiplication and DCA Mutes
+                float dcaFinalGain = dcaMutedActive ? 0.0f : dcaGainMultiplier;
+                for (size_t s = 0; s < samples; ++s) {
+                    buf[s] *= dcaFinalGain;
+                }
+            }
+        }
+
+        // 4. Stage 3: Internal Matrix Summing (Buses 0-7)
+        alignas(16) std::array<std::array<float, 256>, 8> busBuffers{};
+        for (size_t b = 0; b < 8; ++b) {
+            busBuffers[b].fill(0.0f);
+        }
+
+        std::array<const float*, 24> channelPtrs{};
+        for (size_t c = 0; c < 24; ++c) {
+            channelPtrs[c] = channelBuffers[c].data();
+        }
+        std::array<float*, 8> busPtrs{};
+        for (size_t b = 0; b < 8; ++b) {
+            busPtrs[b] = busBuffers[b].data();
+        }
+
+        routingMatrix.process(
+            std::span<const float*>(channelPtrs.data(), 24),
+            std::span<float*>(busPtrs.data(), 8),
+            samples
+        );
+
+        // 5. Stage 4: Output Patching (Buses -> Outputs)
+        for (size_t o = 0; o < OutputChannelsCount; ++o) {
+            const auto& patch = outputPatchMap[o];
+            if (patch.active && patch.busIdx < 8) {
+                std::copy_n(busBuffers[patch.busIdx].data(), samples, outputBufferPtrs[o]);
+            }
+        }
+
+        // 6. Stage 5: Master Safety Limiter
+        for (size_t o = 0; o < hardwareOutputs; ++o) {
             masterSafetyLimiter.process(outputBufferPtrs[o], samples);
         }
 
-        // 5. Append to recording SPSC buffers if armed
+        // 7. Append to recording SPSC buffers if armed
         if (m_recordingArmed.load() && m_recorder != nullptr) {
-            for (size_t c = 0; c < inputs; ++c) {
+            for (size_t c = 0; c < 24; ++c) {
                 auto& rb = m_recordBlocks[c];
                 for (size_t s = 0; s < samples; ++s) {
-                    rb.samples[rb.count++] = inputBufferPtrs[c][s];
+                    rb.samples[rb.count++] = channelBuffers[c][s];
                     if (rb.count >= AudioRecordBlock::BlockSize) {
                         m_recorder->pushBlock(c, rb);
                         rb.count = 0;
@@ -173,7 +361,6 @@ public:
         activeAuxesCount.store(std::min(numAuxes, MaxAuxes));
         activeDCAsCount.store(std::min(numDCAs, MaxDCAs));
 
-        // Dynamic visual fader strips remapping
         size_t faderIdx = 0;
         for (size_t i = 0; i < activeInputsCount.load() && faderIdx < faderStrips.size(); ++i) {
             faderStrips[faderIdx++] = &channelPool[i];
@@ -184,7 +371,6 @@ public:
             faderStrips[faderIdx++] = &channelPool[dcaStartIdx + i];
         }
 
-        // Null-out remaining fader strips
         while (faderIdx < faderStrips.size()) {
             faderStrips[faderIdx++] = nullptr;
         }
@@ -210,7 +396,28 @@ private:
     std::atomic<size_t> activeAuxesCount{8};
     std::atomic<size_t> activeDCAsCount{8};
 
+    // 3-Stage Patching backend state
+    std::array<AudioSourcePatch, 24> inputPatchMap;
+    std::array<OutputPatch, 8> outputPatchMap;
+    std::array<float, 8> dcaVolumes;
+    std::array<bool, 8> dcaMutes;
+    std::array<uint32_t, 24> channelDcaMasks;
+
+    std::array<std::unique_ptr<SPSCQueue<float>>, 24> appCaptureQueues;
+    SPSCQueue<RoutingCommand> uiToDspQueue;
+
+    // Test Signal Generator States
+    float sinePhase = 0.0f;
+    float pinkB0 = 0.0f;
+    float pinkB1 = 0.0f;
+    float pinkB2 = 0.0f;
+    float pinkB3 = 0.0f;
+    float pinkB4 = 0.0f;
+    float pinkB5 = 0.0f;
+    float pinkB6 = 0.0f;
+
     AudioRecorderManager* m_recorder = nullptr;
     std::atomic<bool> m_recordingArmed{false};
     std::array<AudioRecordBlock, InputChannelsCount> m_recordBlocks{};
 };
+

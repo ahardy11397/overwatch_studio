@@ -287,3 +287,31 @@ TEST(RoutingPatchMapTest, VerifyTypesAndCommands) {
     EXPECT_TRUE(outputPatch.active);
     EXPECT_EQ(outputPatch.busIdx, 2);
 }
+
+TEST(AudioEngineCoreTest, VerifyPipelineStages) {
+    AudioEngineCore engine;
+    engine.configureEngine(24, 8, 8, 8);
+    
+    // Patch channel 0 to Generator (1kHz Sine)
+    engine.setInputPatch(0, AudioSourceType::Generator, 0); // 0 = Sine
+    // Route channel 0 to MST L (Bus 0)
+    engine.setRoute(0, 0, 1.0f, TapPoint::PostFader);
+    // Patch Output Port 0 to MST L (Bus 0)
+    engine.setOutputPatch(0, 0);
+
+    std::vector<float> outputBuffer(256, 0.0f);
+    std::vector<float*> outputPtrs(8, outputBuffer.data());
+    
+    // Run engine process callback
+    engine.audioDeviceIOCallbackWithContext(
+        nullptr, 0,
+        outputPtrs.data(), 8,
+        256, nullptr
+    );
+
+    // Verify that output port 0 received non-zero signal (from Sine generator)
+    float sum = 0.0f;
+    for(float s : outputBuffer) sum += std::abs(s);
+    EXPECT_GT(sum, 0.0f);
+}
+
