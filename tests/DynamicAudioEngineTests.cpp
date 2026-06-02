@@ -176,3 +176,33 @@ TEST(WavFileWriterTest, VerifyFileCreationAndHeader) {
     EXPECT_EQ(std::string(header + 8, 4), "WAVE");
 }
 
+#include "AudioRecorderManager.h"
+#include <thread>
+#include <chrono>
+
+TEST(AudioRecorderManagerTest, VerifyAsynchronousWriting) {
+    AudioRecorderManager manager;
+    manager.initialize(4, "test_session");
+    manager.startSession(48000);
+    
+    // Push some test blocks
+    AudioRecordBlock block;
+    block.samples.fill(0.2f);
+    block.count = 256;
+    
+    bool ok = manager.pushBlock(0, block);
+    EXPECT_TRUE(ok);
+    
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    manager.stopSession();
+    
+    // Check if the directory and files were created
+    EXPECT_TRUE(std::filesystem::exists("test_session/track_1.wav"));
+    EXPECT_TRUE(std::filesystem::exists("test_session/track_2.wav"));
+    EXPECT_TRUE(std::filesystem::exists("test_session/track_3.wav"));
+    EXPECT_TRUE(std::filesystem::exists("test_session/track_4.wav"));
+    
+    // Clean up
+    std::filesystem::remove_all("test_session");
+}
+
