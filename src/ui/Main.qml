@@ -1103,6 +1103,10 @@ Window {
 
         property int selectedChannel: 0
         property bool editLayerAssignmentsActive: false
+        property int uiInputsCount: 24
+        property int uiBusesCount: 8
+        property int uiAuxesCount: 8
+        property int uiDCAsCount: 8
         property var faderAssignments: [
             // Bank 0 (default: CH 1-8)
             [
@@ -5046,6 +5050,11 @@ Window {
                                 onClicked: {
 
                                     showBuilder.loadShowArchive("test_show.sds")
+                                    audioWin.uiInputsCount = 16
+                                    audioWin.uiBusesCount = 4
+                                    audioWin.uiAuxesCount = 4
+                                    audioWin.uiDCAsCount = 4
+                                    audioCore.configureShowChannels(16, 4, 4, 4)
 
                                 }
 
@@ -5186,6 +5195,270 @@ Window {
                         }
 
 
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            height: 1
+                            color: "#252b36"
+                        }
+
+                        // DAW MULTITRACK RECORDING
+                        ColumnLayout {
+                            spacing: 8
+                            Layout.fillWidth: true
+
+                            Text {
+                                text: "DAW MULTITRACK RECORDING"
+                                color: "#ff4d4d"
+                                font.pixelSize: 8
+                                font.bold: true
+                            }
+
+                            RowLayout {
+                                spacing: 8
+                                Layout.fillWidth: true
+
+                                Button {
+                                    id: recordArmBtn
+                                    text: audioCore.recordArmed ? "🔴 ARMED" : "⚪ ARM REC"
+                                    Layout.fillWidth: true
+                                    implicitHeight: 32
+                                    checkable: true
+                                    checked: audioCore.recordArmed
+                                    
+                                    background: Rectangle {
+                                        color: recordArmBtn.checked ? "#4d0000" : "#1a1f29"
+                                        border.color: recordArmBtn.checked ? "#ff4d4d" : "#252b36"
+                                        border.width: 1.5
+                                        radius: 6
+                                    }
+                                    contentItem: Text {
+                                        text: recordArmBtn.text
+                                        color: recordArmBtn.checked ? "#ff4d4d" : "#8a8d98"
+                                        font.pixelSize: 9
+                                        font.bold: true
+                                        horizontalAlignment: Text.AlignHCenter
+                                        verticalAlignment: Text.AlignVCenter
+                                    }
+                                    onClicked: {
+                                        audioCore.armRecording(!audioCore.recordArmed);
+                                    }
+                                }
+
+                                Button {
+                                    id: recordTriggerBtn
+                                    text: audioCore.recordingActive ? "⏹ STOP" : "⏺ RECORD"
+                                    Layout.fillWidth: true
+                                    implicitHeight: 32
+                                    checkable: true
+                                    checked: audioCore.recordingActive
+                                    enabled: audioCore.recordArmed
+                                    
+                                    background: Rectangle {
+                                        color: recordTriggerBtn.checked ? "#ff4d4d" : (recordTriggerBtn.enabled ? "#1a1f29" : "#0d1015")
+                                        border.color: recordTriggerBtn.checked ? "#ff4d4d" : "#252b36"
+                                        border.width: 1.5
+                                        radius: 6
+                                    }
+                                    contentItem: Text {
+                                        text: recordTriggerBtn.text
+                                        color: recordTriggerBtn.checked ? "#0a0c10" : (recordTriggerBtn.enabled ? "#ff4d4d" : "#404040")
+                                        font.pixelSize: 9
+                                        font.bold: true
+                                        horizontalAlignment: Text.AlignHCenter
+                                        verticalAlignment: Text.AlignVCenter
+                                    }
+                                    onClicked: {
+                                        audioCore.triggerRecording(!audioCore.recordingActive);
+                                    }
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            height: 1
+                            color: "#252b36"
+                        }
+
+                        // DYNAMIC SHOW ENGINE SCALING
+                        ColumnLayout {
+                            spacing: 8
+                            Layout.fillWidth: true
+
+                            Text {
+                                text: "DYNAMIC ENGINE SCALING"
+                                color: "#00d084"
+                                font.pixelSize: 8
+                                font.bold: true
+                            }
+
+                            RowLayout {
+                                spacing: 10
+                                Layout.fillWidth: true
+
+                                ColumnLayout {
+                                    spacing: 4
+                                    Text { text: "INPUTS"; color: "#6e727d"; font.pixelSize: 8; font.bold: true }
+                                    RowLayout {
+                                        spacing: 4
+                                        Button {
+                                            id: decInputs
+                                            text: "-"
+                                            implicitWidth: 20
+                                            implicitHeight: 20
+                                            background: Rectangle { color: "#1a1f29"; radius: 4; border.color: "#252b36" }
+                                            contentItem: Text { text: "-"; color: "#8a8d98"; font.pixelSize: 10; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                            onClicked: if (audioWin.uiInputsCount > 1) audioWin.uiInputsCount--
+                                        }
+                                        Text {
+                                            text: audioWin.uiInputsCount
+                                            color: "#ffffff"
+                                            font.pixelSize: 10
+                                            font.bold: true
+                                            implicitWidth: 18
+                                            horizontalAlignment: Text.AlignHCenter
+                                        }
+                                        Button {
+                                            id: incInputs
+                                            text: "+"
+                                            implicitWidth: 20
+                                            implicitHeight: 20
+                                            background: Rectangle { color: "#1a1f29"; radius: 4; border.color: "#252b36" }
+                                            contentItem: Text { text: "+"; color: "#8a8d98"; font.pixelSize: 10; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                            onClicked: if (audioWin.uiInputsCount < 24) audioWin.uiInputsCount++
+                                        }
+                                    }
+                                }
+
+                                ColumnLayout {
+                                    spacing: 4
+                                    Text { text: "BUSES"; color: "#6e727d"; font.pixelSize: 8; font.bold: true }
+                                    RowLayout {
+                                        spacing: 4
+                                        Button {
+                                            id: decBuses
+                                            text: "-"
+                                            implicitWidth: 20
+                                            implicitHeight: 20
+                                            background: Rectangle { color: "#1a1f29"; radius: 4; border.color: "#252b36" }
+                                            contentItem: Text { text: "-"; color: "#8a8d98"; font.pixelSize: 10; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                            onClicked: if (audioWin.uiBusesCount > 0) audioWin.uiBusesCount--
+                                        }
+                                        Text {
+                                            text: audioWin.uiBusesCount
+                                            color: "#ffffff"
+                                            font.pixelSize: 10
+                                            font.bold: true
+                                            implicitWidth: 18
+                                            horizontalAlignment: Text.AlignHCenter
+                                        }
+                                        Button {
+                                            id: incBuses
+                                            text: "+"
+                                            implicitWidth: 20
+                                            implicitHeight: 20
+                                            background: Rectangle { color: "#1a1f29"; radius: 4; border.color: "#252b36" }
+                                            contentItem: Text { text: "+"; color: "#8a8d98"; font.pixelSize: 10; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                            onClicked: if (audioWin.uiBusesCount < 8) audioWin.uiBusesCount++
+                                        }
+                                    }
+                                }
+
+                                ColumnLayout {
+                                    spacing: 4
+                                    Text { text: "AUXES"; color: "#6e727d"; font.pixelSize: 8; font.bold: true }
+                                    RowLayout {
+                                        spacing: 4
+                                        Button {
+                                            id: decAuxes
+                                            text: "-"
+                                            implicitWidth: 20
+                                            implicitHeight: 20
+                                            background: Rectangle { color: "#1a1f29"; radius: 4; border.color: "#252b36" }
+                                            contentItem: Text { text: "-"; color: "#8a8d98"; font.pixelSize: 10; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                            onClicked: if (audioWin.uiAuxesCount > 0) audioWin.uiAuxesCount--
+                                        }
+                                        Text {
+                                            text: audioWin.uiAuxesCount
+                                            color: "#ffffff"
+                                            font.pixelSize: 10
+                                            font.bold: true
+                                            implicitWidth: 18
+                                            horizontalAlignment: Text.AlignHCenter
+                                        }
+                                        Button {
+                                            id: incAuxes
+                                            text: "+"
+                                            implicitWidth: 20
+                                            implicitHeight: 20
+                                            background: Rectangle { color: "#1a1f29"; radius: 4; border.color: "#252b36" }
+                                            contentItem: Text { text: "+"; color: "#8a8d98"; font.pixelSize: 10; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                            onClicked: if (audioWin.uiAuxesCount < 8) audioWin.uiAuxesCount++
+                                        }
+                                    }
+                                }
+
+                                ColumnLayout {
+                                    spacing: 4
+                                    Text { text: "DCAS"; color: "#6e727d"; font.pixelSize: 8; font.bold: true }
+                                    RowLayout {
+                                        spacing: 4
+                                        Button {
+                                            id: decDCAs
+                                            text: "-"
+                                            implicitWidth: 20
+                                            implicitHeight: 20
+                                            background: Rectangle { color: "#1a1f29"; radius: 4; border.color: "#252b36" }
+                                            contentItem: Text { text: "-"; color: "#8a8d98"; font.pixelSize: 10; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                            onClicked: if (audioWin.uiDCAsCount > 0) audioWin.uiDCAsCount--
+                                        }
+                                        Text {
+                                            text: audioWin.uiDCAsCount
+                                            color: "#ffffff"
+                                            font.pixelSize: 10
+                                            font.bold: true
+                                            implicitWidth: 18
+                                            horizontalAlignment: Text.AlignHCenter
+                                        }
+                                        Button {
+                                            id: incDCAs
+                                            text: "+"
+                                            implicitWidth: 20
+                                            implicitHeight: 20
+                                            background: Rectangle { color: "#1a1f29"; radius: 4; border.color: "#252b36" }
+                                            contentItem: Text { text: "+"; color: "#8a8d98"; font.pixelSize: 10; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                            onClicked: if (audioWin.uiDCAsCount < 8) audioWin.uiDCAsCount++
+                                        }
+                                    }
+                                }
+                            }
+
+                            Button {
+                                id: applyScalingBtn
+                                text: "RECONFIGURE SHOW ENGINE"
+                                Layout.fillWidth: true
+                                implicitHeight: 28
+                                
+                                background: Rectangle {
+                                    color: "#1a1f29"
+                                    border.color: "#00d084"
+                                    border.width: 1
+                                    radius: 6
+                                }
+                                contentItem: Text {
+                                    text: applyScalingBtn.text
+                                    color: "#00d084"
+                                    font.pixelSize: 8
+                                    font.bold: true
+                                    horizontalAlignment: Text.AlignHCenter
+                                    verticalAlignment: Text.AlignVCenter
+                                }
+                                onClicked: {
+                                    audioCore.configureShowChannels(audioWin.uiInputsCount, audioWin.uiBusesCount, audioWin.uiAuxesCount, audioWin.uiDCAsCount);
+                                }
+                            }
+                        }
 
                         Item { Layout.fillHeight: true }
 

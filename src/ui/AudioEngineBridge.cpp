@@ -1,5 +1,6 @@
 // Touch for Task 1: Summing Engine & C++ Device Selector
 #include "AudioEngineBridge.h"
+#include "../core/audio/AudioEngineCore.h"
 #include "../core/control/PanicSwitch.h"
 #include "../core/control/SystemWatchdog.h"
 #include "../core/control/DeviceReclamationEngine.h"
@@ -16,11 +17,24 @@ AudioEngineBridge::AudioEngineBridge(QObject* parent)
     
     m_recorderManager = std::make_unique<AudioRecorderManager>();
     m_recorderManager->initialize(24, "recording_session_" + QDateTime::currentDateTime().toString("yyyy-MM-dd_hhmmss").toStdString());
+    m_engine = std::make_unique<AudioEngineCore>();
+    m_engine->setRecorder(m_recorderManager.get());
 
     m_running = true;
     m_simulatedAudioThread = std::jthread([this](std::stop_token stopToken) {
+        std::vector<float> inputBuffer(256, 0.1f);
+        std::vector<float> outputBuffer(256, 0.0f);
+        std::vector<const float*> inputPtrs(24, inputBuffer.data());
+        std::vector<float*> outputPtrs(8, outputBuffer.data());
         while (!stopToken.stop_requested() && m_running.load()) {
             SystemWatchdog::getInstance().registerAudioCallback();
+            if (m_engine) {
+                m_engine->audioDeviceIOCallbackWithContext(
+                    inputPtrs.data(), 24,
+                    outputPtrs.data(), 8,
+                    256, nullptr
+                );
+            }
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
         }
     });
@@ -561,6 +575,9 @@ void AudioEngineBridge::armRecording(bool armed) {
     if (m_recordArmed != armed) {
         m_recordArmed = armed;
         emit recordArmedChanged();
+        if (m_engine) {
+            m_engine->setRecordingArmed(armed);
+        }
     }
 }
 
@@ -581,4 +598,10 @@ void AudioEngineBridge::configureShowChannels(int numInputs, int numBuses, int n
                                       ", Buses=" + std::to_string(numBuses) +
                                       ", Auxes=" + std::to_string(numAuxes) +
                                       ", DCAs=" + std::to_string(numDCAs));
+    if (m_engine) {
+        m_engine->configureEngine(static_cast<size_t>(numInputs),
+                                  static_cast<size_t>(numBuses),
+                                  static_cast<size_t>(numAuxes),
+                                  static_cast<size_t>(numDCAs));
+    }
 }

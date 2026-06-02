@@ -15,6 +15,8 @@
 #include "../core/audio/AudioRecorderManager.h"
 #include <memory>
 
+class AudioEngineCore;
+
 class AudioEngineBridge : public QObject {
     Q_OBJECT
     Q_PROPERTY(float faderVolume READ faderVolume WRITE setFaderVolume NOTIFY faderVolumeChanged)
@@ -434,4 +436,5 @@ private:
     bool m_recordArmed = false;
     bool m_recordingActive = false;
     std::unique_ptr<AudioRecorderManager> m_recorderManager;
+    std::unique_ptr<AudioEngineCore> m_engine;
 };
