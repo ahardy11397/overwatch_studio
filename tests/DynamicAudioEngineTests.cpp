@@ -206,3 +206,57 @@ TEST(AudioRecorderManagerTest, VerifyAsynchronousWriting) {
     std::filesystem::remove_all("test_session");
 }
 
+TEST(DynamicAudioEngineTest, VerifyDynamicReconfiguration) {
+    AudioEngineCore core;
+    core.configureEngine(12, 4, 4, 4);
+    
+    auto& faderStrips = core.getFaderStrips();
+    
+    // First 12 should be input strips
+    for (size_t i = 0; i < 12; ++i) {
+        ASSERT_NE(faderStrips[i], nullptr);
+        EXPECT_EQ(faderStrips[i]->type, ChannelType::Input);
+    }
+    
+    // Next 4 should be DCA strips
+    for (size_t i = 12; i < 16; ++i) {
+        ASSERT_NE(faderStrips[i], nullptr);
+        EXPECT_EQ(faderStrips[i]->type, ChannelType::DCA);
+    }
+    
+    // Remaining should be nullptr
+    for (size_t i = 16; i < faderStrips.size(); ++i) {
+        EXPECT_EQ(faderStrips[i], nullptr);
+    }
+}
+
+TEST(DynamicAudioEngineTest, VerifyRealtimeRecordStreaming) {
+    AudioEngineCore core;
+    AudioRecorderManager recorder;
+    
+    recorder.initialize(2, "test_streaming_session");
+    core.setRecorder(&recorder);
+    core.setRecordingArmed(true);
+    
+    recorder.startSession(48000);
+    
+    // Simulate real-time blocks pushing
+    std::vector<float> channel1(256, 0.5f);
+    std::vector<float> channel2(256, -0.5f);
+    const float* inputs[2] = { channel1.data(), channel2.data() };
+    float* outputs[2] = { channel1.data(), channel2.data() };
+    
+    // Run IOCallback multiple times to accumulate samples and stream
+    for (int i = 0; i < 10; ++i) {
+        core.audioDeviceIOCallbackWithContext(inputs, 2, outputs, 2, 256, nullptr);
+    }
+    
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    recorder.stopSession();
+    
+    // Check files are generated
+    EXPECT_TRUE(std::filesystem::exists("test_streaming_session/track_1.wav"));
+    EXPECT_TRUE(std::filesystem::exists("test_streaming_session/track_2.wav"));
+    
+    std::filesystem::remove_all("test_streaming_session");
+}

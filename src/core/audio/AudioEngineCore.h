@@ -11,11 +11,13 @@
 #include "AudioChannelStrip.h"
 #include "SparseRoutingMatrix.h"
 #include "LookAheadLimiter.h"
+#include "AudioRecorderManager.h"
 #include "../control/RealtimeLogger.h"
 #include <span>
 #include <vector>
 #include <memory>
 #include <algorithm>
+#include <atomic>
 
 #ifndef JUCE_ASIO
 namespace juce {
@@ -140,6 +142,20 @@ public:
         for (size_t o = 0; o < outputs; ++o) {
             masterSafetyLimiter.process(outputBufferPtrs[o], samples);
         }
+
+        // 5. Append to recording SPSC buffers if armed
+        if (m_recordingArmed.load() && m_recorder != nullptr) {
+            for (size_t c = 0; c < inputs; ++c) {
+                auto& rb = m_recordBlocks[c];
+                for (size_t s = 0; s < samples; ++s) {
+                    rb.samples[rb.count++] = inputBufferPtrs[c][s];
+                    if (rb.count >= AudioRecordBlock::BlockSize) {
+                        m_recorder->pushBlock(c, rb);
+                        rb.count = 0;
+                    }
+                }
+            }
+        }
     }
 
     AudioChannelStrip& getChannelStrip(size_t index) noexcept {
@@ -158,6 +174,40 @@ public:
         return faderStrips;
     }
 
+    size_t getActiveSampleRate() const noexcept { return static_cast<size_t>(activeSampleRate); }
+    
+    void setRecorder(AudioRecorderManager* recorder) noexcept {
+        m_recorder = recorder;
+    }
+    
+    bool isRecordingArmed() const noexcept { return m_recordingArmed.load(); }
+    void setRecordingArmed(bool armed) noexcept { m_recordingArmed.store(armed); }
+
+    void configureEngine(size_t numInputs, size_t numBuses, size_t numAuxes, size_t numDCAs) noexcept {
+        activeInputsCount.store(std::min(numInputs, MaxInputs));
+        activeBusesCount.store(std::min(numBuses, MaxBuses));
+        activeAuxesCount.store(std::min(numAuxes, MaxAuxes));
+        activeDCAsCount.store(std::min(numDCAs, MaxDCAs));
+
+        // Dynamic visual fader strips remapping
+        size_t faderIdx = 0;
+        for (size_t i = 0; i < activeInputsCount.load() && faderIdx < faderStrips.size(); ++i) {
+            faderStrips[faderIdx++] = &channelPool[i];
+        }
+        
+        size_t dcaStartIdx = MaxInputs + MaxBuses + MaxAuxes + MaxFX;
+        for (size_t i = 0; i < activeDCAsCount.load() && faderIdx < faderStrips.size(); ++i) {
+            faderStrips[faderIdx++] = &channelPool[dcaStartIdx + i];
+        }
+
+        // Null-out remaining fader strips
+        while (faderIdx < faderStrips.size()) {
+            faderStrips[faderIdx++] = nullptr;
+        }
+
+        routingMatrix.clear();
+    }
+
 private:
     float activeSampleRate;
     alignas(64) std::array<AudioChannelStrip, PoolSize> channelPool;
@@ -170,4 +220,13 @@ private:
 
     alignas(16) std::array<float, 1024> dummyBuffer{};
     alignas(16) std::array<float, 1024> dummySummingBuffer{};
+
+    std::atomic<size_t> activeInputsCount{24};
+    std::atomic<size_t> activeBusesCount{8};
+    std::atomic<size_t> activeAuxesCount{8};
+    std::atomic<size_t> activeDCAsCount{8};
+
+    AudioRecorderManager* m_recorder = nullptr;
+    std::atomic<bool> m_recordingArmed{false};
+    std::array<AudioRecordBlock, InputChannelsCount> m_recordBlocks{};
 };
