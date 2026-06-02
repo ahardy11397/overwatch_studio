@@ -7827,6 +7827,8 @@ Window {
 
                     // Tab 3 Content: Audio Patch Board Matrix
                     ScrollView {
+                        id: patchBoardScrollView
+                        property int patchSubTab: 0 // 0 = Input Patch, 1 = Routing, 2 = Output Patch
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         visible: rightPanel.activeTab === 3
@@ -7935,20 +7937,228 @@ Window {
                                 }
                             }
 
-                            // --- COLLAPSIBLE 2D COORDINATE MATRIX GRID ---
-                            Rectangle {
+                            // --- SUB-TAB SWITCHER NAVIGATION BAR ---
+                            RowLayout {
                                 Layout.fillWidth: true
-                                implicitHeight: 460
+                                spacing: 4
+                                height: 26
+
+                                Repeater {
+                                    model: ["1. INPUT PATCH", "2. INTERNAL ROUTING", "3. OUTPUT PATCH"]
+                                    delegate: Button {
+                                        Layout.fillWidth: true
+                                        implicitHeight: 24
+                                        text: modelData
+                                        
+                                        background: Rectangle {
+                                            color: patchBoardScrollView.patchSubTab === index ? "#004F58" : "#1a1c1e"
+                                            border.color: patchBoardScrollView.patchSubTab === index ? "#00BDD6" : "#252b36"
+                                            border.width: 1
+                                            radius: 4
+                                        }
+                                        contentItem: Text {
+                                            text: parent.text
+                                            color: patchBoardScrollView.patchSubTab === index ? "#00BDD6" : "#8a8d98"
+                                            font.pixelSize: 8
+                                            font.bold: true
+                                            anchors.centerIn: parent
+                                        }
+                                        onClicked: {
+                                            patchBoardScrollView.patchSubTab = index;
+                                        }
+                                    }
+                                }
+                            }
+
+                            // --- INPUT PATCH PANEL ---
+                            Rectangle {
+                                visible: patchBoardScrollView.patchSubTab === 0
+                                Layout.fillWidth: true
+                                implicitHeight: inputPatchLayout.implicitHeight + 24
                                 color: "#0a0c10"
                                 radius: 8
                                 border.color: "#252b36"
                                 border.width: 1
-                                clip: true
 
                                 ColumnLayout {
+                                    id: inputPatchLayout
                                     anchors.fill: parent
-                                    anchors.margins: 6
-                                    spacing: 2
+                                    anchors.margins: 12
+                                    spacing: 8
+
+                                    Text {
+                                        text: "CONSOLE CHANNEL INPUT PATCHING"
+                                        color: "#8a8d98"
+                                        font.pixelSize: 9
+                                        font.bold: true
+                                    }
+
+                                    Repeater {
+                                        model: 24
+                                        delegate: RowLayout {
+                                            spacing: 12
+                                            Layout.fillWidth: true
+                                            property int channelIdx: index
+                                            
+                                            // Channel Label (CH 1..24)
+                                            Rectangle {
+                                                width: 40; height: 24
+                                                color: "#1a1c1e"
+                                                radius: 4
+                                                border.color: "#252b36"
+                                                Text {
+                                                    anchors.centerIn: parent
+                                                    text: "CH " + (channelIdx + 1)
+                                                    color: "#00BDD6"
+                                                    font.pixelSize: 9
+                                                    font.bold: true
+                                                }
+                                            }
+                                            
+                                            // Channel Name
+                                            Text {
+                                                text: "Channel " + (channelIdx + 1)
+                                                color: "#f8fafc"
+                                                font.pixelSize: 10
+                                                Layout.preferredWidth: 80
+                                            }
+                                            
+                                            // Source Type ComboBox
+                                            ComboBox {
+                                                id: srcTypeCombo
+                                                implicitHeight: 24
+                                                Layout.preferredWidth: 130
+                                                model: ["Unpatched", "ASIO Hardware", "Test Generator", "App Capture"]
+                                                
+                                                currentIndex: {
+                                                    if (audioCore.inputPatches && audioCore.inputPatches[channelIdx] !== undefined) {
+                                                        return audioCore.inputPatches[channelIdx].type;
+                                                    }
+                                                    return 0;
+                                                }
+                                                
+                                                onActivated: {
+                                                    var newType = index;
+                                                    var oldType = (audioCore.inputPatches && audioCore.inputPatches[channelIdx] !== undefined) ? audioCore.inputPatches[channelIdx].type : 0;
+                                                    if (oldType === 3 && newType !== 3) {
+                                                        audioCore.stopApplicationCapture(channelIdx);
+                                                    }
+                                                    
+                                                    if (newType === 3) {
+                                                        var processes = Object.keys(audioCore.availableProcesses);
+                                                        if (processes.length > 0) {
+                                                            var procName = processes[0];
+                                                            var pid = audioCore.availableProcesses[procName];
+                                                            audioCore.setInputPatch(channelIdx, 3, 0);
+                                                            audioCore.startApplicationCapture(channelIdx, procName, pid);
+                                                        } else {
+                                                            audioCore.setInputPatch(channelIdx, 3, 0);
+                                                        }
+                                                    } else {
+                                                        audioCore.setInputPatch(channelIdx, newType, 0);
+                                                    }
+                                                }
+                                            }
+                                            
+                                            // Source Detail ComboBox
+                                            ComboBox {
+                                                id: srcDetailCombo
+                                                implicitHeight: 24
+                                                Layout.preferredWidth: 150
+                                                enabled: srcTypeCombo.currentIndex > 0
+                                                
+                                                model: {
+                                                    var type = srcTypeCombo.currentIndex;
+                                                    if (type === 1) {
+                                                        return [
+                                                            "ASIO Port 1", "ASIO Port 2", "ASIO Port 3", "ASIO Port 4",
+                                                            "ASIO Port 5", "ASIO Port 6", "ASIO Port 7", "ASIO Port 8",
+                                                            "ASIO Port 9", "ASIO Port 10", "ASIO Port 11", "ASIO Port 12",
+                                                            "ASIO Port 13", "ASIO Port 14", "ASIO Port 15", "ASIO Port 16"
+                                                        ];
+                                                    } else if (type === 2) {
+                                                        return ["1kHz Sine Wave", "Pink Noise"];
+                                                    } else if (type === 3) {
+                                                        return Object.keys(audioCore.availableProcesses);
+                                                    } else {
+                                                        return ["-"];
+                                                    }
+                                                }
+                                                
+                                                currentIndex: {
+                                                    var type = srcTypeCombo.currentIndex;
+                                                    if (type === 0) return 0;
+                                                    if (audioCore.inputPatches && audioCore.inputPatches[channelIdx] !== undefined) {
+                                                        var backendType = audioCore.inputPatches[channelIdx].type;
+                                                        if (backendType === type) {
+                                                            return audioCore.inputPatches[channelIdx].index;
+                                                        }
+                                                    }
+                                                    return 0;
+                                                }
+                                                
+                                                onActivated: {
+                                                    var type = srcTypeCombo.currentIndex;
+                                                    if (type === 1 || type === 2) {
+                                                        audioCore.setInputPatch(channelIdx, type, index);
+                                                    } else if (type === 3) {
+                                                        var processes = Object.keys(audioCore.availableProcesses);
+                                                        if (index >= 0 && index < processes.length) {
+                                                            var procName = processes[index];
+                                                            var pid = audioCore.availableProcesses[procName];
+                                                            audioCore.setInputPatch(channelIdx, 3, index);
+                                                            audioCore.startApplicationCapture(channelIdx, procName, pid);
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            
+                                            // PID Info for App Capture
+                                            Text {
+                                                Layout.fillWidth: true
+                                                text: {
+                                                    if (srcTypeCombo.currentIndex === 3) {
+                                                        var processes = Object.keys(audioCore.availableProcesses);
+                                                        var selIdx = srcDetailCombo.currentIndex;
+                                                        if (selIdx >= 0 && selIdx < processes.length) {
+                                                            var procName = processes[selIdx];
+                                                            var pid = audioCore.availableProcesses[procName];
+                                                            return "PID: " + pid;
+                                                        }
+                                                    }
+                                                    return "";
+                                                }
+                                                color: "#8a8d98"
+                                                font.pixelSize: 9
+                                                font.family: "Courier New"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // --- INTERNAL ROUTING MATRIX ---
+                            Rectangle {
+                                visible: patchBoardScrollView.patchSubTab === 1
+                                Layout.fillWidth: true
+                                implicitHeight: routingMatrixLayout.implicitHeight + 24
+                                color: "#0a0c10"
+                                radius: 8
+                                border.color: "#252b36"
+                                border.width: 1
+
+                                ColumnLayout {
+                                    id: routingMatrixLayout
+                                    anchors.fill: parent
+                                    anchors.margins: 12
+                                    spacing: 6
+
+                                    Text {
+                                        text: "CONSOLE INTERNAL ROUTING GRID MATRIX"
+                                        color: "#8a8d98"
+                                        font.pixelSize: 9
+                                        font.bold: true
+                                    }
 
                                     // Column Headers (Destinations)
                                     RowLayout {
@@ -7957,11 +8167,11 @@ Window {
 
                                         // Corner Spacer
                                         Rectangle {
-                                            width: 85; height: 35
+                                            width: 80; height: 35
                                             color: "#101216"
                                             radius: 4
                                             Text {
-                                                text: "SRC \ DEST"
+                                                text: "CH \\ DEST"
                                                 color: "#00BDD6"
                                                 font.pixelSize: 8
                                                 font.bold: true
@@ -7969,20 +8179,28 @@ Window {
                                             }
                                         }
 
-                                        // Column Header Labels (8 summing paths)
+                                        // Column Header Labels (8 summing paths + 8 DCAs)
                                         Repeater {
                                             model: [
-                                                { name: "MST L", cat: "MST" },
-                                                { name: "MST R", cat: "MST" },
-                                                { name: "AUX 1", cat: "AUX" },
-                                                { name: "AUX 2", cat: "AUX" },
-                                                { name: "AUX 3", cat: "AUX" },
-                                                { name: "AUX 4", cat: "AUX" },
-                                                { name: "REC L", cat: "REC" },
-                                                { name: "REC R", cat: "REC" }
+                                                { name: "MST L", cat: "BUS" },
+                                                { name: "MST R", cat: "BUS" },
+                                                { name: "AUX 1", cat: "BUS" },
+                                                { name: "AUX 2", cat: "BUS" },
+                                                { name: "AUX 3", cat: "BUS" },
+                                                { name: "AUX 4", cat: "BUS" },
+                                                { name: "REC L", cat: "BUS" },
+                                                { name: "REC R", cat: "BUS" },
+                                                { name: "DCA 1", cat: "DCA" },
+                                                { name: "DCA 2", cat: "DCA" },
+                                                { name: "DCA 3", cat: "DCA" },
+                                                { name: "DCA 4", cat: "DCA" },
+                                                { name: "DCA 5", cat: "DCA" },
+                                                { name: "DCA 6", cat: "DCA" },
+                                                { name: "DCA 7", cat: "DCA" },
+                                                { name: "DCA 8", cat: "DCA" }
                                             ]
                                             delegate: Rectangle {
-                                                width: 25; height: 35
+                                                width: 24; height: 35
                                                 color: "#14171a"
                                                 radius: 3
                                                 border.color: "#252b36"
@@ -7995,7 +8213,7 @@ Window {
                                                     
                                                     Text {
                                                         text: modelData.cat
-                                                        color: "#8a8d98"
+                                                        color: modelData.cat === "BUS" ? "#00BDD6" : "#E040FB"
                                                         font.pixelSize: 6
                                                         font.bold: true
                                                         Layout.alignment: Qt.AlignHCenter
@@ -8012,200 +8230,155 @@ Window {
                                         }
                                     }
 
-                                    // Collapsible Source Categories
-                                    ColumnLayout {
-                                        Layout.fillWidth: true
-                                        spacing: 1
-
-                                        // Row Category 1: ASIO HW Inputs
-                                        Rectangle {
+                                    // Matrix Rows (24 Console Channels)
+                                    Repeater {
+                                        model: 24
+                                        delegate: RowLayout {
+                                            spacing: 1
                                             Layout.fillWidth: true
-                                            height: 18
-                                            color: "#14171a"
-                                            radius: 4
-                                            border.color: "#252b36"
-                                            border.width: 1
-                                            property bool expanded: true
-                                            id: hwCatHeader
+                                            property int rIdx: index
 
-                                            RowLayout {
-                                                anchors.fill: parent
-                                                anchors.margins: 4
+                                            // Row Label
+                                            Rectangle {
+                                                width: 80; height: 18
+                                                color: "#101216"
+                                                radius: 3
                                                 Text {
-                                                    text: (hwCatHeader.expanded ? "▼ " : "▶ ") + "ASIO PHYSICAL INPUTS (1-16)"
-                                                    color: "#00BDD6"
+                                                    text: "CH " + (rIdx + 1)
+                                                    color: "#a0a5b0"
                                                     font.pixelSize: 8
-                                                    font.bold: true
+                                                    anchors.left: parent.left
+                                                    anchors.leftMargin: 6
+                                                    anchors.verticalCenter: parent.verticalCenter
                                                 }
                                             }
-                                            MouseArea {
-                                                anchors.fill: parent
-                                                onClicked: hwCatHeader.expanded = !hwCatHeader.expanded
-                                            }
-                                        }
 
-                                        // ASIO Input Rows (16 rows)
-                                        ColumnLayout {
-                                            Layout.fillWidth: true
-                                            spacing: 1
-                                            visible: hwCatHeader.expanded
-
+                                            // 16 Cells (8 Buses + 8 DCAs)
                                             Repeater {
                                                 model: 16
-                                                delegate: RowLayout {
-                                                    spacing: 1
-                                                    Layout.fillWidth: true
-                                                    property int rowIdx: index
+                                                delegate: Rectangle {
+                                                    width: 24; height: 18
+                                                    color: cellMouseArea.containsMouse ? "#1e222b" : "#0f1011"
+                                                    border.color: "#1c1f22"
+                                                    border.width: 1
+                                                    radius: 2
+
+                                                    property int cIdx: index
+                                                    property bool isBus: cIdx < 8
+                                                    property int dcaIdx: cIdx - 8
+                                                    property bool isRouteActive: isBus ? root.checkRouteActive(rIdx, cIdx) : ((audioCore.channelDcaMasks[rIdx] & (1 << dcaIdx)) !== 0)
+                                                    property int tapPoint: isBus ? root.getRouteTap(rIdx, cIdx) : 0
 
                                                     Rectangle {
-                                                        width: 85; height: 18
-                                                        color: "#101216"
+                                                        width: 6; height: 6
                                                         radius: 3
-                                                        Text {
-                                                            text: "ASIO IN " + (parent.rowIdx + 1)
-                                                            color: "#a0a5b0"
-                                                            font.pixelSize: 8
-                                                            anchors.left: parent.left
-                                                            anchors.leftMargin: 6
-                                                            anchors.verticalCenter: parent.verticalCenter
+                                                        anchors.centerIn: parent
+                                                        visible: parent.isRouteActive
+                                                        color: {
+                                                            if (parent.isBus) {
+                                                                return parent.tapPoint === 0 ? "#00BDD6" : (parent.tapPoint === 1 ? "#ffb300" : "#00E676");
+                                                            } else {
+                                                                return "#E040FB"; // Magenta
+                                                            }
                                                         }
                                                     }
 
-                                                    Repeater {
-                                                        model: 8
-                                                        delegate: Rectangle {
-                                                            width: 25; height: 18
-                                                            color: mouseArea.containsMouse ? "#1e222b" : "#0f1011"
-                                                            border.color: "#1c1f22"
-                                                            border.width: 1
-                                                            radius: 2
-
-                                                            property int rIdx: parent.parent.rowIdx
-                                                            property int cIdx: index
-                                                            property bool activeRoute: root.checkRouteActive(rIdx, cIdx)
-                                                            property int tapPoint: root.getRouteTap(rIdx, cIdx)
-
-                                                            Rectangle {
-                                                                width: 6; height: 6
-                                                                radius: 3
-                                                                anchors.centerIn: parent
-                                                                visible: parent.activeRoute
-                                                                color: parent.tapPoint === 0 ? "#00BDD6" : (parent.tapPoint === 1 ? "#ffb300" : "#00E676")
+                                                    MouseArea {
+                                                        id: cellMouseArea
+                                                        anchors.fill: parent
+                                                        hoverEnabled: true
+                                                        onClicked: {
+                                                            if (parent.isBus) {
+                                                                root.toggleRoute(rIdx, parent.cIdx);
+                                                            } else {
+                                                                var active = parent.isRouteActive;
+                                                                audioCore.updateChannelDCAMapping(rIdx, parent.dcaIdx, !active);
                                                             }
-
-                                                            MouseArea {
-                                                                id: mouseArea
-                                                                anchors.fill: parent
-                                                                hoverEnabled: true
-                                                                onClicked: {
-                                                                    root.toggleRoute(parent.rIdx, parent.cIdx)
-                                                                }
-                                                                onDoubleClicked: {
-                                                                    var pt = mouseArea.mapToItem(root.contentItem, mouseArea.width/2, mouseArea.height/2);
-                                                                    root.openRouteEditor(parent.rIdx, parent.cIdx, pt);
-                                                                }
+                                                        }
+                                                        onDoubleClicked: {
+                                                            if (parent.isBus) {
+                                                                var pt = cellMouseArea.mapToItem(root.contentItem, cellMouseArea.width/2, cellMouseArea.height/2);
+                                                                root.openRouteEditor(rIdx, parent.cIdx, pt);
                                                             }
                                                         }
                                                     }
                                                 }
                                             }
                                         }
+                                    }
+                                }
+                            }
 
-                                        // Row Category 2: Test Generators
-                                        Rectangle {
+                            // --- OUTPUT PATCH PANEL ---
+                            Rectangle {
+                                visible: patchBoardScrollView.patchSubTab === 2
+                                Layout.fillWidth: true
+                                implicitHeight: outputPatchLayout.implicitHeight + 24
+                                color: "#0a0c10"
+                                radius: 8
+                                border.color: "#252b36"
+                                border.width: 1
+
+                                ColumnLayout {
+                                    id: outputPatchLayout
+                                    anchors.fill: parent
+                                    anchors.margins: 12
+                                    spacing: 8
+
+                                    Text {
+                                        text: "PHYSICAL OUTPUT CHANNEL PATCHING"
+                                        color: "#8a8d98"
+                                        font.pixelSize: 9
+                                        font.bold: true
+                                    }
+
+                                    Repeater {
+                                        model: 8
+                                        delegate: RowLayout {
+                                            spacing: 12
                                             Layout.fillWidth: true
-                                            height: 18
-                                            color: "#14171a"
-                                            radius: 4
-                                            border.color: "#252b36"
-                                            border.width: 1
-                                            property bool expanded: true
-                                            id: genCatHeader
+                                            property int portIdx: index
 
-                                            RowLayout {
-                                                anchors.fill: parent
-                                                anchors.margins: 4
+                                            // Label
+                                            Rectangle {
+                                                width: 120; height: 24
+                                                color: "#1a1c1e"
+                                                radius: 4
+                                                border.color: "#252b36"
                                                 Text {
-                                                    text: (genCatHeader.expanded ? "▼ " : "▶ ") + "INTERNAL TEST SIGNAL GENERATORS"
+                                                    anchors.centerIn: parent
+                                                    text: "ASIO Output " + (portIdx + 1)
                                                     color: "#00BDD6"
-                                                    font.pixelSize: 8
+                                                    font.pixelSize: 9
                                                     font.bold: true
                                                 }
                                             }
-                                            MouseArea {
-                                                anchors.fill: parent
-                                                onClicked: genCatHeader.expanded = !genCatHeader.expanded
-                                            }
-                                        }
 
-                                        // Generator Rows (2 rows: 1kHz Sine, Pink Noise mapped to indices 16, 17)
-                                        ColumnLayout {
-                                            Layout.fillWidth: true
-                                            spacing: 1
-                                            visible: genCatHeader.expanded
-
-                                            Repeater {
-                                                model: [
-                                                    { idx: 16, name: "1kHz SINE" },
-                                                    { idx: 17, name: "PINK NOISE" }
-                                                ]
-                                                delegate: RowLayout {
-                                                    spacing: 1
-                                                    Layout.fillWidth: true
-                                                    property int rowIdx: modelData.idx
-
-                                                    Rectangle {
-                                                        width: 85; height: 18
-                                                        color: "#101216"
-                                                        radius: 3
-                                                        Text {
-                                                            text: modelData.name
-                                                            color: "#ffc72c"
-                                                            font.pixelSize: 8
-                                                            anchors.left: parent.left
-                                                            anchors.leftMargin: 6
-                                                            anchors.verticalCenter: parent.verticalCenter
+                                            // ComboBox
+                                            ComboBox {
+                                                id: patchedBusCombo
+                                                implicitHeight: 24
+                                                Layout.preferredWidth: 200
+                                                model: ["Unpatched", "Master L", "Master R", "Aux 1", "Aux 2", "Aux 3", "Aux 4", "Rec L", "Rec R"]
+                                                
+                                                currentIndex: {
+                                                    if (audioCore.outputPatches && audioCore.outputPatches[portIdx] !== undefined) {
+                                                        var patch = audioCore.outputPatches[portIdx];
+                                                        if (patch.active) {
+                                                            return patch.busIdx + 1;
                                                         }
                                                     }
+                                                    return 0;
+                                                }
 
-                                                    Repeater {
-                                                        model: 8
-                                                        delegate: Rectangle {
-                                                            width: 25; height: 18
-                                                            color: genMouseArea.containsMouse ? "#1e222b" : "#0f1011"
-                                                            border.color: "#1c1f22"
-                                                            border.width: 1
-                                                            radius: 2
-
-                                                            property int rIdx: parent.parent.rowIdx
-                                                            property int cIdx: index
-                                                            property bool activeRoute: root.checkRouteActive(rIdx, cIdx)
-                                                            property int tapPoint: root.getRouteTap(rIdx, cIdx)
-
-                                                            Rectangle {
-                                                                width: 6; height: 6
-                                                                radius: 3
-                                                                anchors.centerIn: parent
-                                                                visible: parent.activeRoute
-                                                                color: parent.tapPoint === 0 ? "#00BDD6" : (parent.tapPoint === 1 ? "#ffb300" : "#00E676")
-                                                            }
-
-                                                            MouseArea {
-                                                                id: genMouseArea
-                                                                anchors.fill: parent
-                                                                hoverEnabled: true
-                                                                onClicked: {
-                                                                    root.toggleRoute(parent.rIdx, parent.cIdx)
-                                                                }
-                                                                onDoubleClicked: {
-                                                                    var pt = genMouseArea.mapToItem(root.contentItem, genMouseArea.width/2, genMouseArea.height/2);
-                                                                    root.openRouteEditor(parent.rIdx, parent.cIdx, pt);
-                                                                }
-                                                            }
-                                                        }
-                                                    }
+                                                onActivated: {
+                                                    var active = index > 0;
+                                                    var busIdx = index - 1;
+                                                    audioCore.setOutputPatch(portIdx, busIdx, active);
                                                 }
                                             }
+
+                                            Item { Layout.fillWidth: true }
                                         }
                                     }
                                 }
