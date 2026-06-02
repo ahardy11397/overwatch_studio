@@ -5316,7 +5316,7 @@ Window {
                                             color: "#ffffff"
                                             font.pixelSize: 10
                                             font.bold: true
-                                            implicitWidth: 18
+                                            Layout.preferredWidth: 18
                                             horizontalAlignment: Text.AlignHCenter
                                         }
                                         Button {
@@ -5350,7 +5350,7 @@ Window {
                                             color: "#ffffff"
                                             font.pixelSize: 10
                                             font.bold: true
-                                            implicitWidth: 18
+                                            Layout.preferredWidth: 18
                                             horizontalAlignment: Text.AlignHCenter
                                         }
                                         Button {
@@ -5384,7 +5384,7 @@ Window {
                                             color: "#ffffff"
                                             font.pixelSize: 10
                                             font.bold: true
-                                            implicitWidth: 18
+                                            Layout.preferredWidth: 18
                                             horizontalAlignment: Text.AlignHCenter
                                         }
                                         Button {
@@ -5418,7 +5418,7 @@ Window {
                                             color: "#ffffff"
                                             font.pixelSize: 10
                                             font.bold: true
-                                            implicitWidth: 18
+                                            Layout.preferredWidth: 18
                                             horizontalAlignment: Text.AlignHCenter
                                         }
                                         Button {
