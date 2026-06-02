@@ -10,6 +10,7 @@
 
 #include "ParameterSmoother.h"
 #include "AVSyncDelayLine.h"
+#include <algorithm>
 #include <cstddef>
 #include <cmath>
 #include <array>
@@ -57,6 +58,15 @@ public:
         delayLine.setDelayMs(ms, sampleRate);
     }
 
+    void setFaderLinear(float linear) noexcept {
+        volumeTarget = linear;
+        faderSmoother.setTarget(linear);
+    }
+
+    void setMuted(bool m) noexcept {
+        muted = m;
+    }
+
     /**
     * @brief Main realtime-safe DSP processing pipeline for the channel strip.
     */
@@ -68,6 +78,11 @@ public:
         // 1. Apply Lip Sync Delay (only for Input)
         if (type == ChannelType::Input) {
             delayLine.processBlock(samples, numSamples);
+        }
+
+        if (muted) {
+            std::fill_n(samples, numSamples, 0.0f);
+            return;
         }
 
         // 2. High-Pass Filter (HPF)
@@ -137,4 +152,7 @@ public:
     ParameterSmoother faderSmoother;
     AVSyncDelayLine delayLine;
     ChannelType type = ChannelType::Input;
+
+private:
+    bool muted{false};
 };

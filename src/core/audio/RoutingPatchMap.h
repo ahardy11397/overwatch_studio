@@ -31,7 +31,9 @@ enum class RoutingCommandType : uint8_t {
     SetOutputPatch,
     SetDCAMapping,
     SetDCAVolume,
-    SetDCAMute
+    SetDCAMute,
+    SetChannelVolume,
+    SetChannelMute
 };
 
 struct RoutingCommand {

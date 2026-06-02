@@ -394,4 +394,24 @@ TEST(AudioEngineCoreTest, VerifyDCAMute) {
     EXPECT_NEAR(sum, 0.0f, 1e-6f);
 }
 
+TEST(AudioChannelStripTest, VerifyVolumeAndMute) {
+    AudioChannelStrip strip;
+    strip.prepareToPlay(48000.0f);
+    strip.setFaderLinear(0.5f);
+    EXPECT_FLOAT_EQ(strip.volumeTarget, 0.5f);
+
+    std::vector<float> buffer(256, 1.0f);
+    strip.processBlock(buffer.data(), buffer.size());
+    // Fader volume target should pull it down (smoothed)
+    EXPECT_LT(buffer[255], 1.0f);
+
+    strip.setMuted(true);
+    strip.processBlock(buffer.data(), buffer.size());
+    // Muted channel should output absolute silence
+    for (float s : buffer) {
+        EXPECT_FLOAT_EQ(s, 0.0f);
+    }
+}
+
+
 
