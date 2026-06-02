@@ -329,3 +329,69 @@ TEST(AudioEngineCoreTest, VerifyPipelineStages) {
     }
 }
 
+TEST(AudioEngineCoreTest, VerifyDCAVolumeAttenuation) {
+    auto engineA = std::make_unique<AudioEngineCore>();
+    engineA->configureEngine(24, 8, 8, 8);
+    engineA->setInputPatch(0, AudioSourceType::Generator, 0); // Sine
+    engineA->setRoute(0, 0, 1.0f, TapPoint::PostFader);
+    engineA->setOutputPatch(0, 0);
+    engineA->updateChannelDCAMapping(0, 1, true); // DCA 1
+    engineA->updateDCAVolume(1, 1.0f); // Volume = 1.0
+
+    auto engineB = std::make_unique<AudioEngineCore>();
+    engineB->configureEngine(24, 8, 8, 8);
+    engineB->setInputPatch(0, AudioSourceType::Generator, 0); // Sine
+    engineB->setRoute(0, 0, 1.0f, TapPoint::PostFader);
+    engineB->setOutputPatch(0, 0);
+    engineB->updateChannelDCAMapping(0, 1, true); // DCA 1
+    engineB->updateDCAVolume(1, 0.5f); // Volume = 0.5
+
+    std::vector<std::vector<float>> outputBuffersA(8, std::vector<float>(256, 0.0f));
+    std::vector<float*> outputPtrsA(8);
+    std::vector<std::vector<float>> outputBuffersB(8, std::vector<float>(256, 0.0f));
+    std::vector<float*> outputPtrsB(8);
+
+    for (size_t i = 0; i < 8; ++i) {
+        outputPtrsA[i] = outputBuffersA[i].data();
+        outputPtrsB[i] = outputBuffersB[i].data();
+    }
+
+    // Run both engine callbacks
+    engineA->audioDeviceIOCallbackWithContext(nullptr, 0, outputPtrsA.data(), 8, 256, nullptr);
+    engineB->audioDeviceIOCallbackWithContext(nullptr, 0, outputPtrsB.data(), 8, 256, nullptr);
+
+    // Verify that engineA output is non-zero
+    float sumA = 0.0f;
+    for (float s : outputBuffersA[0]) sumA += std::abs(s);
+    EXPECT_GT(sumA, 0.0f);
+
+    // Verify that engineB output is exactly half of engineA output for each sample
+    for (size_t s = 0; s < 256; ++s) {
+        EXPECT_NEAR(outputBuffersB[0][s], outputBuffersA[0][s] * 0.5f, 1e-4f);
+    }
+}
+
+TEST(AudioEngineCoreTest, VerifyDCAMute) {
+    auto engine = std::make_unique<AudioEngineCore>();
+    engine->configureEngine(24, 8, 8, 8);
+    engine->setInputPatch(0, AudioSourceType::Generator, 0); // Sine
+    engine->setRoute(0, 0, 1.0f, TapPoint::PostFader);
+    engine->setOutputPatch(0, 0);
+    engine->updateChannelDCAMapping(0, 1, true); // DCA 1
+    engine->updateDCAMute(1, true); // Mute = true
+
+    std::vector<std::vector<float>> outputBuffers(8, std::vector<float>(256, 0.0f));
+    std::vector<float*> outputPtrs(8);
+    for (size_t i = 0; i < 8; ++i) {
+        outputPtrs[i] = outputBuffers[i].data();
+    }
+
+    engine->audioDeviceIOCallbackWithContext(nullptr, 0, outputPtrs.data(), 8, 256, nullptr);
+
+    // Verify output is completely silent due to DCA mute
+    float sum = 0.0f;
+    for (float s : outputBuffers[0]) sum += std::abs(s);
+    EXPECT_NEAR(sum, 0.0f, 1e-6f);
+}
+
+
