@@ -299,8 +299,13 @@ TEST(AudioEngineCoreTest, VerifyPipelineStages) {
     // Patch Output Port 0 to MST L (Bus 0)
     engine->setOutputPatch(0, 0);
 
-    std::vector<float> outputBuffer(256, 0.0f);
-    std::vector<float*> outputPtrs(8, outputBuffer.data());
+    // Create 8 separate non-aliasing buffers
+    std::vector<std::vector<float>> outputBuffers(8, std::vector<float>(256, 0.0f));
+    std::vector<float*> outputPtrs(8);
+    for (size_t i = 0; i < 8; ++i) {
+        outputPtrs[i] = outputBuffers[i].data();
+        std::cout << "[DEBUG] outputBuffers[" << i << "].data() = " << (void*)outputBuffers[i].data() << std::endl;
+    }
     
     // Run engine process callback
     engine->audioDeviceIOCallbackWithContext(
@@ -310,8 +315,17 @@ TEST(AudioEngineCoreTest, VerifyPipelineStages) {
     );
 
     // Verify that output port 0 received non-zero signal (from Sine generator)
-    float sum = 0.0f;
-    for(float s : outputBuffer) sum += std::abs(s);
-    EXPECT_GT(sum, 0.0f);
+    float sum0 = 0.0f;
+    for(float s : outputBuffers[0]) sum0 += std::abs(s);
+    std::cout << "[DEBUG] sum0 = " << sum0 << std::endl;
+    EXPECT_GT(sum0, 0.0f);
+
+    // Verify that other output ports remain silent
+    for (size_t i = 1; i < 8; ++i) {
+        float sumI = 0.0f;
+        for(float s : outputBuffers[i]) sumI += std::abs(s);
+        std::cout << "[DEBUG] sum[" << i << "] = " << sumI << std::endl;
+        EXPECT_NEAR(sumI, 0.0f, 1e-6f);
+    }
 }
 

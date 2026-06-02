@@ -97,6 +97,9 @@ public:
     void audioDeviceAboutToStart(void* device) override {
         (void)device;
         RealtimeLogger::getInstance().log("AudioEngineCore callback started.");
+        for (auto& strip : channelPool) {
+            strip.prepareToPlay(activeSampleRate);
+        }
     }
 
     void audioDeviceStopped() override {
@@ -175,15 +178,23 @@ public:
         size_t hardwareInputs = std::min(static_cast<size_t>(numInputChannels), InputChannelsCount);
         size_t hardwareOutputs = std::min(static_cast<size_t>(numOutputChannels), OutputChannelsCount);
 
+        // Compute activeInputs and activeBuses
+        size_t activeInputs = std::min(activeInputsCount.load(std::memory_order_relaxed), InputChannelsCount);
+        size_t activeBuses = std::min(activeBusesCount.load(std::memory_order_relaxed), size_t(8));
+
         // 1. Process SPSC commands from the UI thread
         while (auto cmdOpt = uiToDspQueue.pop()) {
             const auto& cmd = *cmdOpt;
             switch (cmd.type) {
                 case RoutingCommandType::SetInputPatch:
-                    setInputPatch(cmd.channelIdx, static_cast<AudioSourceType>(cmd.targetIdx), cmd.flag);
+                    if (cmd.targetIdx <= static_cast<uint32_t>(AudioSourceType::AppCapture)) {
+                        setInputPatch(cmd.channelIdx, static_cast<AudioSourceType>(cmd.targetIdx), cmd.flag);
+                    }
                     break;
                 case RoutingCommandType::SetRoute:
-                    setRoute(cmd.channelIdx, cmd.targetIdx, cmd.gain, static_cast<TapPoint>(cmd.flag));
+                    if (cmd.flag <= static_cast<uint32_t>(TapPoint::PostFader)) {
+                        setRoute(cmd.channelIdx, cmd.targetIdx, cmd.gain, static_cast<TapPoint>(cmd.flag));
+                    }
                     break;
                 case RoutingCommandType::UnpatchRoute:
                     unpatchRoute(cmd.channelIdx, cmd.targetIdx);
@@ -213,9 +224,17 @@ public:
             std::fill_n(outputBufferPtrs[o], samples, 0.0f);
         }
 
+        // Zero out active ranges of pre-allocated buffers
+        for (size_t c = 0; c < activeInputs; ++c) {
+            std::fill_n(channelBuffers[c].data(), samples, 0.0f);
+        }
+        for (size_t b = 0; b < activeBuses; ++b) {
+            std::fill_n(busBuffers[b].data(), samples, 0.0f);
+        }
+        std::fill_n(dummySummingBuffer.data(), samples, 0.0f);
+
         // 2. Stage 1: Input Patching (Source -> Temp Channels)
-        alignas(16) std::array<std::array<float, MaxBlockSize>, 24> channelBuffers{};
-        for (size_t c = 0; c < 24; ++c) {
+        for (size_t c = 0; c < activeInputs; ++c) {
             float* dest = channelBuffers[c].data();
             const auto& patch = inputPatchMap[c];
 
@@ -262,7 +281,7 @@ public:
         }
 
         // 3. Stage 2: Channel Strip DSP & DCA Scaling
-        for (size_t c = 0; c < 24; ++c) {
+        for (size_t c = 0; c < activeInputs; ++c) {
             float* buf = channelBuffers[c].data();
             
             // Scale volume target based on DCA mapping
@@ -289,18 +308,13 @@ public:
         }
 
         // 4. Stage 3: Internal Matrix Summing (Buses 0-7)
-        alignas(16) std::array<std::array<float, MaxBlockSize>, 8> busBuffers{};
-        for (size_t b = 0; b < 8; ++b) {
-            busBuffers[b].fill(0.0f);
-        }
-
         std::array<const float*, 24> channelPtrs{};
         for (size_t c = 0; c < 24; ++c) {
-            channelPtrs[c] = channelBuffers[c].data();
+            channelPtrs[c] = (c < activeInputs) ? channelBuffers[c].data() : dummyBuffer.data();
         }
         std::array<float*, 8> busPtrs{};
         for (size_t b = 0; b < 8; ++b) {
-            busPtrs[b] = busBuffers[b].data();
+            busPtrs[b] = (b < activeBuses) ? busBuffers[b].data() : dummySummingBuffer.data();
         }
 
         routingMatrix.process(
@@ -312,19 +326,19 @@ public:
         // 5. Stage 4: Output Patching (Buses -> Outputs)
         for (size_t o = 0; o < OutputChannelsCount; ++o) {
             const auto& patch = outputPatchMap[o];
-            if (patch.active && patch.busIdx < 8) {
+            if (patch.active && patch.busIdx < activeBuses) {
                 std::copy_n(busBuffers[patch.busIdx].data(), samples, outputBufferPtrs[o]);
             }
         }
 
         // 6. Stage 5: Master Safety Limiter
         for (size_t o = 0; o < hardwareOutputs; ++o) {
-            masterSafetyLimiter.process(outputBufferPtrs[o], samples);
+            masterSafetyLimiters[o].process(outputBufferPtrs[o], samples);
         }
 
         // 7. Append to recording SPSC buffers if armed
         if (m_recordingArmed.load() && m_recorder != nullptr) {
-            for (size_t c = 0; c < 24; ++c) {
+            for (size_t c = 0; c < activeInputs; ++c) {
                 auto& rb = m_recordBlocks[c];
                 for (size_t s = 0; s < samples; ++s) {
                     rb.samples[rb.count++] = channelBuffers[c][s];
@@ -390,13 +404,16 @@ private:
     alignas(64) std::array<AudioChannelStrip, PoolSize> channelPool;
     alignas(64) std::array<AudioChannelStrip*, 32> faderStrips;
     alignas(64) SparseRoutingMatrix routingMatrix;
-    alignas(64) LookAheadLimiter masterSafetyLimiter;
+    alignas(64) std::array<LookAheadLimiter, OutputChannelsCount> masterSafetyLimiters;
 
     std::array<const float*, InputChannelsCount> inputBufferPtrs;
     std::array<float*, OutputChannelsCount> outputBufferPtrs;
 
     alignas(16) std::array<float, MaxBlockSize> dummyBuffer{};
     alignas(16) std::array<float, MaxBlockSize> dummySummingBuffer{};
+
+    alignas(16) std::array<std::array<float, MaxBlockSize>, 24> channelBuffers{};
+    alignas(16) std::array<std::array<float, MaxBlockSize>, 8> busBuffers{};
 
     std::atomic<size_t> activeInputsCount{24};
     std::atomic<size_t> activeBusesCount{8};
