@@ -140,7 +140,13 @@ AudioEngineBridge::AudioEngineBridge(QObject* parent)
             patch.index = 0;
         }
         m_uiInputPatches.append(patch);
-        setInputPatch(i, patch.type, patch.index);
+        pushCommand(RoutingCommand{
+            RoutingCommandType::SetInputPatch,
+            static_cast<uint32_t>(i),
+            static_cast<uint32_t>(patch.type),
+            0.0f,
+            static_cast<uint32_t>(patch.index)
+        });
     }
 
     // Initialize m_uiOutputPatches to 8 slots
@@ -150,7 +156,13 @@ AudioEngineBridge::AudioEngineBridge(QObject* parent)
         patch.busIdx = i;
         patch.active = true;
         m_uiOutputPatches.append(patch);
-        setOutputPatch(i, i, true);
+        pushCommand(RoutingCommand{
+            RoutingCommandType::SetOutputPatch,
+            static_cast<uint32_t>(i),
+            static_cast<uint32_t>(i),
+            0.0f,
+            1U
+        });
     }
 }
 
@@ -160,6 +172,16 @@ AudioEngineBridge::~AudioEngineBridge() {
     if (m_simulatedAudioThread.joinable()) {
         m_simulatedAudioThread.join();
     }
+
+    // Explicitly stop all application captures to stop background threads 
+    // BEFORE the engine and its queues are destroyed.
+    for (int i = 0; i < 32; ++i) {
+        if (m_processCaptures[i]) {
+            m_processCaptures[i]->stop();
+            m_processCaptures[i].reset();
+        }
+    }
+
     ExternalControlSurfaceManager::getInstance().stop();
 }
 
@@ -182,15 +204,13 @@ void AudioEngineBridge::updateDCAVolume(int dcaIdx, double volume) {
     if (dcaIdx >= 0 && dcaIdx < m_dcaVolumes.size()) {
         if (!qFuzzyCompare(m_dcaVolumes[dcaIdx], volume)) {
             m_dcaVolumes[dcaIdx] = volume;
-            if (m_engine) {
-                m_engine->getCommandQueue().push(RoutingCommand{
-                    RoutingCommandType::SetDCAVolume,
-                    static_cast<uint32_t>(dcaIdx),
-                    0,
-                    static_cast<float>(volume),
-                    0
-                });
-            }
+            pushCommand(RoutingCommand{
+                RoutingCommandType::SetDCAVolume,
+                static_cast<uint32_t>(dcaIdx),
+                0,
+                static_cast<float>(volume),
+                0
+            });
             emit dcaVolumesChanged();
         }
     }
@@ -200,15 +220,13 @@ void AudioEngineBridge::updateMuteGroupState(int groupIdx, bool state) {
     if (groupIdx >= 0 && groupIdx < m_dcaMutes.size()) {
         if (m_dcaMutes[groupIdx] != state) {
             m_dcaMutes[groupIdx] = state;
-            if (m_engine) {
-                m_engine->getCommandQueue().push(RoutingCommand{
-                    RoutingCommandType::SetDCAMute,
-                    static_cast<uint32_t>(groupIdx),
-                    0,
-                    0.0f,
-                    state ? 1U : 0U
-                });
-            }
+            pushCommand(RoutingCommand{
+                RoutingCommandType::SetDCAMute,
+                static_cast<uint32_t>(groupIdx),
+                0,
+                0.0f,
+                state ? 1U : 0U
+            });
             emit dcaMutesChanged();
         }
     }
@@ -223,15 +241,13 @@ void AudioEngineBridge::updateChannelDCAMapping(int chIdx, int dcaIdx, bool acti
             m_channelDcaMasks[chIdx] &= ~(1 << dcaIdx);
         }
         if (m_channelDcaMasks[chIdx] != oldMask) {
-            if (m_engine) {
-                m_engine->getCommandQueue().push(RoutingCommand{
-                    RoutingCommandType::SetDCAMapping,
-                    static_cast<uint32_t>(chIdx),
-                    static_cast<uint32_t>(dcaIdx),
-                    0.0f,
-                    active ? 1U : 0U
-                });
-            }
+            pushCommand(RoutingCommand{
+                RoutingCommandType::SetDCAMapping,
+                static_cast<uint32_t>(chIdx),
+                static_cast<uint32_t>(dcaIdx),
+                0.0f,
+                active ? 1U : 0U
+            });
             emit channelDcaMasksChanged();
         }
     }
@@ -554,15 +570,13 @@ void AudioEngineBridge::patchRoute(int src, int dest, double gain, int tapType) 
     if (!found) {
         m_uiRoutes.append({src, dest, gain, tapType});
     }
-    if (m_engine) {
-        m_engine->getCommandQueue().push(RoutingCommand{
-            RoutingCommandType::SetRoute,
-            static_cast<uint32_t>(src),
-            static_cast<uint32_t>(dest),
-            static_cast<float>(gain),
-            static_cast<uint32_t>(tapType)
-        });
-    }
+    pushCommand(RoutingCommand{
+        RoutingCommandType::SetRoute,
+        static_cast<uint32_t>(src),
+        static_cast<uint32_t>(dest),
+        static_cast<float>(gain),
+        static_cast<uint32_t>(tapType)
+    });
     emit patchesChanged();
 }
 
@@ -576,15 +590,13 @@ void AudioEngineBridge::unpatchRoute(int src, int dest) {
             break;
         }
     }
-    if (m_engine) {
-        m_engine->getCommandQueue().push(RoutingCommand{
-            RoutingCommandType::UnpatchRoute,
-            static_cast<uint32_t>(src),
-            static_cast<uint32_t>(dest),
-            0.0f,
-            0
-        });
-    }
+    pushCommand(RoutingCommand{
+        RoutingCommandType::UnpatchRoute,
+        static_cast<uint32_t>(src),
+        static_cast<uint32_t>(dest),
+        0.0f,
+        0
+    });
     emit patchesChanged();
 }
 
@@ -616,15 +628,13 @@ void AudioEngineBridge::setInputPatch(int channelIdx, int type, int index) {
     }
     m_uiInputPatches[channelIdx].type = type;
     m_uiInputPatches[channelIdx].index = index;
-    if (m_engine) {
-        m_engine->getCommandQueue().push(RoutingCommand{
-            RoutingCommandType::SetInputPatch,
-            static_cast<uint32_t>(channelIdx),
-            static_cast<uint32_t>(type),
-            0.0f,
-            static_cast<uint32_t>(index)
-        });
-    }
+    pushCommand(RoutingCommand{
+        RoutingCommandType::SetInputPatch,
+        static_cast<uint32_t>(channelIdx),
+        static_cast<uint32_t>(type),
+        0.0f,
+        static_cast<uint32_t>(index)
+    });
     emit patchesChanged();
 }
 
@@ -634,15 +644,13 @@ void AudioEngineBridge::setOutputPatch(int hwOutputIdx, int busIdx, bool active)
     }
     m_uiOutputPatches[hwOutputIdx].busIdx = busIdx;
     m_uiOutputPatches[hwOutputIdx].active = active;
-    if (m_engine) {
-        m_engine->getCommandQueue().push(RoutingCommand{
-            RoutingCommandType::SetOutputPatch,
-            static_cast<uint32_t>(hwOutputIdx),
-            static_cast<uint32_t>(busIdx),
-            0.0f,
-            active ? 1U : 0U
-        });
-    }
+    pushCommand(RoutingCommand{
+        RoutingCommandType::SetOutputPatch,
+        static_cast<uint32_t>(hwOutputIdx),
+        static_cast<uint32_t>(busIdx),
+        0.0f,
+        active ? 1U : 0U
+    });
     emit patchesChanged();
 }
 
@@ -670,6 +678,18 @@ QVariantList AudioEngineBridge::getOutputPatches() const {
     return res;
 }
 
+bool AudioEngineBridge::pushCommand(const RoutingCommand& cmd) {
+    if (m_engine) {
+        if (!m_engine->getCommandQueue().push(cmd)) {
+            qWarning() << "Failed to push RoutingCommand to command queue. Type:"
+                       << static_cast<int>(cmd.type);
+            return false;
+        }
+        return true;
+    }
+    return false;
+}
+
 QVariantMap AudioEngineBridge::availableProcesses() const {
     QVariantMap map;
     map["Discord.exe"] = 1420;
@@ -679,7 +699,7 @@ QVariantMap AudioEngineBridge::availableProcesses() const {
 }
 
 void AudioEngineBridge::startApplicationCapture(int channelIdx, QString processName, int pid) {
-    if (channelIdx < 0 || channelIdx >= 32) return;
+    if (channelIdx < 0 || channelIdx >= 24) return;
     
     // Stop any existing capture on this channel first
     stopApplicationCapture(channelIdx);
@@ -697,7 +717,7 @@ void AudioEngineBridge::startApplicationCapture(int channelIdx, QString processN
 }
 
 void AudioEngineBridge::stopApplicationCapture(int channelIdx) {
-    if (channelIdx < 0 || channelIdx >= 32) return;
+    if (channelIdx < 0 || channelIdx >= 24) return;
     
     if (m_processCaptures[channelIdx]) {
         m_processCaptures[channelIdx]->stop();

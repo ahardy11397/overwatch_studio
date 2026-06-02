@@ -27,6 +27,7 @@ struct OutputPatchUI {
 };
 
 class AudioEngineCore;
+struct RoutingCommand;
 
 class AudioEngineBridge : public QObject {
     Q_OBJECT
@@ -450,9 +451,11 @@ private:
     std::atomic<bool> m_running{true};
     std::jthread m_simulatedAudioThread;
 
+    std::unique_ptr<AudioEngineCore> m_engine;
+    std::unique_ptr<AudioRecorderManager> m_recorderManager;
     std::array<std::unique_ptr<WindowsProcessCapture>, 32> m_processCaptures;
     bool m_recordArmed = false;
     bool m_recordingActive = false;
-    std::unique_ptr<AudioRecorderManager> m_recorderManager;
-    std::unique_ptr<AudioEngineCore> m_engine;
+
+    bool pushCommand(const RoutingCommand& cmd);
 };
