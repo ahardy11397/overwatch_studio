@@ -263,6 +263,18 @@ TEST(DynamicAudioEngineTest, VerifyRealtimeRecordStreaming) {
 }
 
 TEST(RoutingPatchMapTest, VerifyTypesAndCommands) {
+    // Static assertions for SPSC compatibility and standard layout properties
+    static_assert(std::is_trivially_copyable_v<RoutingCommand>, "RoutingCommand must be trivially copyable for SPSC compatibility.");
+    static_assert(std::is_standard_layout_v<RoutingCommand>, "RoutingCommand must use standard layout.");
+
+    // Verify RoutingCommand default initializations
+    RoutingCommand defaultCmd;
+    EXPECT_EQ(defaultCmd.type, RoutingCommandType::SetRoute);
+    EXPECT_EQ(defaultCmd.channelIdx, 0);
+    EXPECT_EQ(defaultCmd.targetIdx, 0);
+    EXPECT_NEAR(defaultCmd.gain, 0.0f, 1e-6f);
+    EXPECT_EQ(defaultCmd.flag, 0);
+
     AudioSourcePatch inputPatch;
     inputPatch.type = AudioSourceType::Generator;
     inputPatch.index = 1;

@@ -1,6 +1,11 @@
 #pragma once
 #include <cstdint>
-#include "SparseRoutingMatrix.h" // For TapPoint definition if needed
+
+enum class TapPoint : uint8_t {
+    PreEQ,
+    PreFader,
+    PostFader
+};
 
 enum class AudioSourceType : uint8_t {
     None = 0,
@@ -30,9 +35,9 @@ enum class RoutingCommandType : uint8_t {
 };
 
 struct RoutingCommand {
-    RoutingCommandType type;
-    uint32_t channelIdx; // Console Channel (0-23) or Output Port (0-7) or DCA Index (0-7)
-    uint32_t targetIdx;  // Source/Target index (e.g., HW input index, generator index, bus index)
-    float gain;          // Gain value / DCA fader volume
-    uint32_t flag;       // TapPoint (0=PreEQ, 1=PreFader, 2=PostFader), or DCA mask, or mute bool
+    RoutingCommandType type{RoutingCommandType::SetRoute};
+    uint32_t channelIdx{0}; // Console Channel (0-23) or Output Port (0-7) or DCA Index (0-7)
+    uint32_t targetIdx{0};  // Source/Target index (e.g., HW input index, generator index, bus index)
+    float gain{0.0f};       // Gain value / DCA fader volume
+    uint32_t flag{0};       // TapPoint (0=PreEQ, 1=PreFader, 2=PostFader), or DCA mask, or mute bool
 };
