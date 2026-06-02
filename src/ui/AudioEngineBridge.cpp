@@ -13,7 +13,7 @@
 #include <QDateTime>
 
 AudioEngineBridge::AudioEngineBridge(QObject* parent) 
-    : QObject(parent), uiToDspQueue(1024), dspToUiQueue(1024) {
+    : QObject(parent), dspToUiQueue(1024) {
     
     m_recorderManager = std::make_unique<AudioRecorderManager>();
     m_recorderManager->initialize(24, "recording_session_" + QDateTime::currentDateTime().toString("yyyy-MM-dd_hhmmss").toStdString());
@@ -127,6 +127,31 @@ AudioEngineBridge::AudioEngineBridge(QObject* parent)
         m_channelGateReleases.append(150.0);
         m_channelGateHolds.append(50.0);
     }
+
+    // Initialize m_uiInputPatches to 24 slots
+    for (int i = 0; i < 24; ++i) {
+        InputPatchUI patch;
+        patch.channelIdx = i;
+        if (i < 16) {
+            patch.type = 1; // HW
+            patch.index = i;
+        } else {
+            patch.type = 0; // None
+            patch.index = 0;
+        }
+        m_uiInputPatches.append(patch);
+        setInputPatch(i, patch.type, patch.index);
+    }
+
+    // Initialize m_uiOutputPatches to 8 slots
+    for (int i = 0; i < 8; ++i) {
+        OutputPatchUI patch;
+        patch.hwOutputIdx = i;
+        patch.busIdx = i;
+        patch.active = true;
+        m_uiOutputPatches.append(patch);
+        setOutputPatch(i, i, true);
+    }
 }
 
 AudioEngineBridge::~AudioEngineBridge() {
@@ -157,6 +182,15 @@ void AudioEngineBridge::updateDCAVolume(int dcaIdx, double volume) {
     if (dcaIdx >= 0 && dcaIdx < m_dcaVolumes.size()) {
         if (!qFuzzyCompare(m_dcaVolumes[dcaIdx], volume)) {
             m_dcaVolumes[dcaIdx] = volume;
+            if (m_engine) {
+                m_engine->getCommandQueue().push(RoutingCommand{
+                    RoutingCommandType::SetDCAVolume,
+                    static_cast<uint32_t>(dcaIdx),
+                    0,
+                    static_cast<float>(volume),
+                    0
+                });
+            }
             emit dcaVolumesChanged();
         }
     }
@@ -166,6 +200,15 @@ void AudioEngineBridge::updateMuteGroupState(int groupIdx, bool state) {
     if (groupIdx >= 0 && groupIdx < m_dcaMutes.size()) {
         if (m_dcaMutes[groupIdx] != state) {
             m_dcaMutes[groupIdx] = state;
+            if (m_engine) {
+                m_engine->getCommandQueue().push(RoutingCommand{
+                    RoutingCommandType::SetDCAMute,
+                    static_cast<uint32_t>(groupIdx),
+                    0,
+                    0.0f,
+                    state ? 1U : 0U
+                });
+            }
             emit dcaMutesChanged();
         }
     }
@@ -180,6 +223,15 @@ void AudioEngineBridge::updateChannelDCAMapping(int chIdx, int dcaIdx, bool acti
             m_channelDcaMasks[chIdx] &= ~(1 << dcaIdx);
         }
         if (m_channelDcaMasks[chIdx] != oldMask) {
+            if (m_engine) {
+                m_engine->getCommandQueue().push(RoutingCommand{
+                    RoutingCommandType::SetDCAMapping,
+                    static_cast<uint32_t>(chIdx),
+                    static_cast<uint32_t>(dcaIdx),
+                    0.0f,
+                    active ? 1U : 0U
+                });
+            }
             emit channelDcaMasksChanged();
         }
     }
@@ -487,12 +539,9 @@ void AudioEngineBridge::setActiveBufferSize(int size) {
 }
 
 void AudioEngineBridge::patchRoute(int src, int dest, double gain, int tapType) {
-    // 1. Thread-safe SPSC serialization command
-    // In physical system, we push a command to the DSP queue:
-    // RoutingCommand cmd{ RoutingCommandType::SetRoute, (uint32_t)src, (uint32_t)dest, (float)gain, (TapPoint)tapType };
-    // uiToDspQueue.enqueue(cmd);
-
-    // 2. Synchronize UI list for QML rendering
+    if (src < 0 || src >= 24 || dest < 0 || dest >= 8) {
+        return;
+    }
     bool found = false;
     for (int i = 0; i < m_uiRoutes.size(); ++i) {
         if (m_uiRoutes[i].src == src && m_uiRoutes[i].dest == dest) {
@@ -505,15 +554,36 @@ void AudioEngineBridge::patchRoute(int src, int dest, double gain, int tapType) 
     if (!found) {
         m_uiRoutes.append({src, dest, gain, tapType});
     }
+    if (m_engine) {
+        m_engine->getCommandQueue().push(RoutingCommand{
+            RoutingCommandType::SetRoute,
+            static_cast<uint32_t>(src),
+            static_cast<uint32_t>(dest),
+            static_cast<float>(gain),
+            static_cast<uint32_t>(tapType)
+        });
+    }
     emit patchesChanged();
 }
 
 void AudioEngineBridge::unpatchRoute(int src, int dest) {
+    if (src < 0 || src >= 24 || dest < 0 || dest >= 8) {
+        return;
+    }
     for (int i = 0; i < m_uiRoutes.size(); ++i) {
         if (m_uiRoutes[i].src == src && m_uiRoutes[i].dest == dest) {
             m_uiRoutes.removeAt(i);
             break;
         }
+    }
+    if (m_engine) {
+        m_engine->getCommandQueue().push(RoutingCommand{
+            RoutingCommandType::UnpatchRoute,
+            static_cast<uint32_t>(src),
+            static_cast<uint32_t>(dest),
+            0.0f,
+            0
+        });
     }
     emit patchesChanged();
 }
@@ -540,6 +610,66 @@ QVariantList AudioEngineBridge::getActivePatches() const {
     return res;
 }
 
+void AudioEngineBridge::setInputPatch(int channelIdx, int type, int index) {
+    if (channelIdx < 0 || channelIdx >= m_uiInputPatches.size()) {
+        return;
+    }
+    m_uiInputPatches[channelIdx].type = type;
+    m_uiInputPatches[channelIdx].index = index;
+    if (m_engine) {
+        m_engine->getCommandQueue().push(RoutingCommand{
+            RoutingCommandType::SetInputPatch,
+            static_cast<uint32_t>(channelIdx),
+            static_cast<uint32_t>(type),
+            0.0f,
+            static_cast<uint32_t>(index)
+        });
+    }
+    emit patchesChanged();
+}
+
+void AudioEngineBridge::setOutputPatch(int hwOutputIdx, int busIdx, bool active) {
+    if (hwOutputIdx < 0 || hwOutputIdx >= m_uiOutputPatches.size()) {
+        return;
+    }
+    m_uiOutputPatches[hwOutputIdx].busIdx = busIdx;
+    m_uiOutputPatches[hwOutputIdx].active = active;
+    if (m_engine) {
+        m_engine->getCommandQueue().push(RoutingCommand{
+            RoutingCommandType::SetOutputPatch,
+            static_cast<uint32_t>(hwOutputIdx),
+            static_cast<uint32_t>(busIdx),
+            0.0f,
+            active ? 1U : 0U
+        });
+    }
+    emit patchesChanged();
+}
+
+QVariantList AudioEngineBridge::getInputPatches() const {
+    QVariantList res;
+    for (const auto& p : m_uiInputPatches) {
+        QVariantMap map;
+        map["channelIdx"] = p.channelIdx;
+        map["type"] = p.type;
+        map["index"] = p.index;
+        res.append(map);
+    }
+    return res;
+}
+
+QVariantList AudioEngineBridge::getOutputPatches() const {
+    QVariantList res;
+    for (const auto& p : m_uiOutputPatches) {
+        QVariantMap map;
+        map["hwOutputIdx"] = p.hwOutputIdx;
+        map["busIdx"] = p.busIdx;
+        map["active"] = p.active;
+        res.append(map);
+    }
+    return res;
+}
+
 QVariantMap AudioEngineBridge::availableProcesses() const {
     QVariantMap map;
     map["Discord.exe"] = 1420;
@@ -554,11 +684,16 @@ void AudioEngineBridge::startApplicationCapture(int channelIdx, QString processN
     // Stop any existing capture on this channel first
     stopApplicationCapture(channelIdx);
     
-    m_processCaptures[channelIdx] = std::make_unique<WindowsProcessCapture>();
-    m_processCaptures[channelIdx]->start(static_cast<DWORD>(pid), uiToDspQueue);
-    
-    RealtimeLogger::getInstance().log("Starting process capture on CH " + std::to_string(channelIdx) + 
-                                      " (" + processName.toStdString() + ", PID: " + std::to_string(pid) + ")");
+    if (m_engine) {
+        auto* queue = m_engine->getAppCaptureQueue(channelIdx);
+        if (queue) {
+            m_processCaptures[channelIdx] = std::make_unique<WindowsProcessCapture>();
+            m_processCaptures[channelIdx]->start(static_cast<DWORD>(pid), *queue);
+            
+            RealtimeLogger::getInstance().log("Starting process capture on CH " + std::to_string(channelIdx) + 
+                                              " (" + processName.toStdString() + ", PID: " + std::to_string(pid) + ")");
+        }
+    }
 }
 
 void AudioEngineBridge::stopApplicationCapture(int channelIdx) {

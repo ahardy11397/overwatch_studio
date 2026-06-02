@@ -15,6 +15,17 @@
 #include "../core/audio/AudioRecorderManager.h"
 #include <memory>
 
+struct InputPatchUI {
+    int channelIdx{0};
+    int type{0};       // 0=None, 1=HW, 2=Generator, 3=App
+    int index{0};      // port or detail index
+};
+struct OutputPatchUI {
+    int hwOutputIdx{0};
+    int busIdx{0};
+    bool active{false};
+};
+
 class AudioEngineCore;
 
 class AudioEngineBridge : public QObject {
@@ -34,6 +45,8 @@ class AudioEngineBridge : public QObject {
     Q_PROPERTY(QVariantMap availableProcesses READ availableProcesses NOTIFY processesChanged)
     Q_PROPERTY(bool recordArmed READ recordArmed NOTIFY recordArmedChanged)
     Q_PROPERTY(bool recordingActive READ recordingActive NOTIFY recordingActiveChanged)
+    Q_PROPERTY(QVariantList inputPatches READ getInputPatches NOTIFY patchesChanged)
+    Q_PROPERTY(QVariantList outputPatches READ getOutputPatches NOTIFY patchesChanged)
     
     // External Control Surface Diagnostics properties
     Q_PROPERTY(int oscPort READ oscPort CONSTANT)
@@ -152,6 +165,10 @@ public:
     Q_INVOKABLE void unpatchRoute(int src, int dest);
     Q_INVOKABLE void configureDevice(QString driver, QString deviceName, int sampleRate, int bufferSize);
     Q_INVOKABLE QVariantList getActivePatches() const;
+    Q_INVOKABLE void setInputPatch(int channelIdx, int type, int index);
+    Q_INVOKABLE void setOutputPatch(int hwOutputIdx, int busIdx, bool active);
+    Q_INVOKABLE QVariantList getInputPatches() const;
+    Q_INVOKABLE QVariantList getOutputPatches() const;
 
     QVariantMap availableProcesses() const;
     Q_INVOKABLE void startApplicationCapture(int channelIdx, QString processName, int pid);
@@ -324,6 +341,8 @@ private:
     int m_activeBufferSize = 128;
     struct ActiveRouteUI { int src; int dest; double gain; int tap; };
     QList<ActiveRouteUI> m_uiRoutes;
+    QList<InputPatchUI> m_uiInputPatches;
+    QList<OutputPatchUI> m_uiOutputPatches;
 
     bool m_midiConnected = true;
     int m_streamDeckClients = 2;
@@ -423,7 +442,6 @@ private:
     bool m_undoTargetFTB = false;
 
     // Lock-free queues going to/from the real-time DSP
-    SPSCQueue<float> uiToDspQueue;
     SPSCQueue<float> dspToUiQueue;
     
     QTimer* m_feedbackTimer;
