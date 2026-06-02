@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include "RoutingPatchMap.h"
 #include "AudioEngineCore.h"
 #include <array>
 #include <algorithm>
@@ -259,4 +260,18 @@ TEST(DynamicAudioEngineTest, VerifyRealtimeRecordStreaming) {
     EXPECT_TRUE(std::filesystem::exists("test_streaming_session/track_2.wav"));
     
     std::filesystem::remove_all("test_streaming_session");
+}
+
+TEST(RoutingPatchMapTest, VerifyTypesAndCommands) {
+    AudioSourcePatch inputPatch;
+    inputPatch.type = AudioSourceType::Generator;
+    inputPatch.index = 1;
+    EXPECT_EQ(inputPatch.type, AudioSourceType::Generator);
+    EXPECT_EQ(inputPatch.index, 1);
+
+    OutputPatch outputPatch;
+    outputPatch.active = true;
+    outputPatch.busIdx = 2;
+    EXPECT_TRUE(outputPatch.active);
+    EXPECT_EQ(outputPatch.busIdx, 2);
 }

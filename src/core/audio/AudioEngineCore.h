@@ -36,23 +36,7 @@ public:
 #else
 #include <juce_audio_devices/juce_audio_devices.h>
 #endif
-
-enum class RoutingCommandType : uint8_t {
-    SetRoute,
-    UnpatchRoute,
-    ClearAllRoutes,
-    SetDeviceConfig
-};
-
-struct alignas(16) RoutingCommand {
-    RoutingCommandType type;
-    uint32_t sourceId;
-    uint32_t destId;
-    float gain;
-    TapPoint tap;
-    uint32_t sampleRate;
-    uint32_t bufferSize;
-};
+#include "RoutingPatchMap.h"
 
 class AudioEngineCore : public juce::AudioIODeviceCallback {
 public:
