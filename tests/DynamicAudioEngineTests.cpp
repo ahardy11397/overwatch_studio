@@ -413,5 +413,45 @@ TEST(AudioChannelStripTest, VerifyVolumeAndMute) {
     }
 }
 
+TEST(AudioEngineCoreTest, VerifyPeaksAndBusControls) {
+    auto engine = std::make_unique<AudioEngineCore>();
+    engine->configureEngine(24, 8, 8, 8);
+
+    // Route channel 0 (Sine) to Bus 0
+    engine->setInputPatch(0, AudioSourceType::Generator, 0); // 1kHz Sine
+    engine->setRoute(0, 0, 1.0f, TapPoint::PostFader);
+    engine->setOutputPatch(0, 0);
+
+    // Unmute channel and set full volume
+    engine->getChannelPool()[0].setFaderLinear(1.0f);
+    engine->getChannelPool()[0].setMuted(false);
+
+    // Set Bus 0 volume to 0.5
+    engine->getChannelPool()[64].setFaderLinear(0.5f); // MaxInputs is 64
+
+    std::vector<float> outputBuffer(256, 0.0f);
+    std::vector<float*> outputPtrs(8, outputBuffer.data());
+
+    // We need to pass valid outputPtrs for all 8 channels to avoid crashes or out-of-bounds
+    std::vector<std::vector<float>> outputBuffers(8, std::vector<float>(256, 0.0f));
+    for (size_t i = 0; i < 8; ++i) {
+        outputPtrs[i] = outputBuffers[i].data();
+    }
+
+    engine->audioDeviceIOCallbackWithContext(
+        nullptr, 0,
+        outputPtrs.data(), 8,
+        256, nullptr
+    );
+
+    // Check input peak and bus peak are tracked
+    EXPECT_GT(engine->getInputPeak(0).load(), 0.0f);
+    EXPECT_GT(engine->getBusPeak(0).load(), 0.0f);
+
+    // Master output peak should also be tracked
+    EXPECT_GT(engine->getMasterPeak().load(), 0.0f);
+}
+
+
 
 

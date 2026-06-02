@@ -113,6 +113,13 @@ public:
         return appCaptureQueues[channelIdx].get();
     }
 
+    std::atomic<float>& getInputPeak(size_t index) noexcept { return inputPeaks[index % 24]; }
+    std::atomic<float>& getBusPeak(size_t index) noexcept { return busPeaks[index % 8]; }
+    std::atomic<float>& getMasterPeak() noexcept { return masterPeak; }
+
+    void setMasterVolume(float vol) noexcept { masterVolume.store(vol, std::memory_order_relaxed); }
+    void setMasterMuted(bool mute) noexcept { masterMuted.store(mute, std::memory_order_relaxed); }
+
     void setInputPatch(uint32_t channelIdx, AudioSourceType type, uint32_t index) noexcept {
         if (channelIdx < 24) {
             inputPatchMap[channelIdx] = AudioSourcePatch{type, index};
@@ -215,6 +222,28 @@ public:
                 case RoutingCommandType::SetDCAMute:
                     updateDCAMute(cmd.channelIdx, cmd.flag != 0);
                     break;
+                case RoutingCommandType::SetChannelVolume:
+                    if (cmd.targetIdx == 0 && cmd.channelIdx < 24) {
+                        channelPool[cmd.channelIdx].setFaderLinear(cmd.gain);
+                    } else if (cmd.targetIdx == 1 && cmd.channelIdx < 8) {
+                        channelPool[MaxInputs + cmd.channelIdx].setFaderLinear(cmd.gain);
+                    } else if (cmd.targetIdx == 2 && cmd.channelIdx < 8) {
+                        channelPool[MaxInputs + MaxBuses + cmd.channelIdx].setFaderLinear(cmd.gain);
+                    } else if (cmd.targetIdx == 3) {
+                        setMasterVolume(cmd.gain);
+                    }
+                    break;
+                case RoutingCommandType::SetChannelMute:
+                    if (cmd.targetIdx == 0 && cmd.channelIdx < 24) {
+                        channelPool[cmd.channelIdx].setMuted(cmd.flag != 0);
+                    } else if (cmd.targetIdx == 1 && cmd.channelIdx < 8) {
+                        channelPool[MaxInputs + cmd.channelIdx].setMuted(cmd.flag != 0);
+                    } else if (cmd.targetIdx == 2 && cmd.channelIdx < 8) {
+                        channelPool[MaxInputs + MaxBuses + cmd.channelIdx].setMuted(cmd.flag != 0);
+                    } else if (cmd.targetIdx == 3) {
+                        setMasterMuted(cmd.flag != 0);
+                    }
+                    break;
             }
         }
 
@@ -281,29 +310,36 @@ public:
         }
 
         // 3. Stage 2: Channel Strip DSP & DCA Scaling
-        for (size_t c = 0; c < activeInputs; ++c) {
-            float* buf = channelBuffers[c].data();
-            
-            // Scale volume target based on DCA mapping
-            float dcaGainMultiplier = 1.0f;
-            bool dcaMutedActive = false;
-            uint32_t mask = channelDcaMasks[c];
-            for (size_t d = 0; d < 8; ++d) {
-                if (mask & (1 << d)) {
-                    dcaGainMultiplier *= dcaVolumes[d];
-                    if (dcaMutes[d]) {
-                        dcaMutedActive = true;
+        for (size_t c = 0; c < InputChannelsCount; ++c) {
+            if (c < activeInputs) {
+                float* buf = channelBuffers[c].data();
+                
+                // Scale volume target based on DCA mapping
+                float dcaGainMultiplier = 1.0f;
+                bool dcaMutedActive = false;
+                uint32_t mask = channelDcaMasks[c];
+                for (size_t d = 0; d < 8; ++d) {
+                    if (mask & (1 << d)) {
+                        dcaGainMultiplier *= dcaVolumes[d];
+                        if (dcaMutes[d]) {
+                            dcaMutedActive = true;
+                        }
                     }
                 }
-            }
 
-            // Process using channelPool[c] directly
-            channelPool[c].processBlock(buf, samples);
-            
-            // Apply DCA Gain multiplication and DCA Mutes
-            float dcaFinalGain = dcaMutedActive ? 0.0f : dcaGainMultiplier;
-            for (size_t s = 0; s < samples; ++s) {
-                buf[s] *= dcaFinalGain;
+                // Process using channelPool[c] directly
+                channelPool[c].processBlock(buf, samples);
+                
+                // Apply DCA Gain multiplication and DCA Mutes
+                float dcaFinalGain = dcaMutedActive ? 0.0f : dcaGainMultiplier;
+                float maxVal = 0.0f;
+                for (size_t s = 0; s < samples; ++s) {
+                    buf[s] *= dcaFinalGain;
+                    maxVal = std::max(maxVal, std::abs(buf[s]));
+                }
+                inputPeaks[c].store(maxVal, std::memory_order_relaxed);
+            } else {
+                inputPeaks[c].store(0.0f, std::memory_order_relaxed);
             }
         }
 
@@ -323,6 +359,22 @@ public:
             samples
         );
 
+        // Process Summing Buses & Calculate peaks
+        for (size_t b = 0; b < 8; ++b) {
+            if (b < activeBuses) {
+                float* buf = busBuffers[b].data();
+                channelPool[MaxInputs + b].processBlock(buf, samples);
+
+                float maxVal = 0.0f;
+                for (size_t s = 0; s < samples; ++s) {
+                    maxVal = std::max(maxVal, std::abs(buf[s]));
+                }
+                busPeaks[b].store(maxVal, std::memory_order_relaxed);
+            } else {
+                busPeaks[b].store(0.0f, std::memory_order_relaxed);
+            }
+        }
+
         // 5. Stage 4: Output Patching (Buses -> Outputs)
         for (size_t o = 0; o < OutputChannelsCount; ++o) {
             const auto& patch = outputPatchMap[o];
@@ -330,6 +382,18 @@ public:
                 std::copy_n(busBuffers[patch.busIdx].data(), samples, outputBufferPtrs[o]);
             }
         }
+
+        // Scale output buffers by Master volume/mute and track Master peak level
+        float mVol = masterMuted.load(std::memory_order_relaxed) ? 0.0f : masterVolume.load(std::memory_order_relaxed);
+        float maxMaster = 0.0f;
+        for (size_t o = 0; o < hardwareOutputs; ++o) {
+            float* outBuf = outputBufferPtrs[o];
+            for (size_t s = 0; s < samples; ++s) {
+                outBuf[s] *= mVol;
+                maxMaster = std::max(maxMaster, std::abs(outBuf[s]));
+            }
+        }
+        masterPeak.store(maxMaster, std::memory_order_relaxed);
 
         // 6. Stage 5: Master Safety Limiter
         for (size_t o = 0; o < hardwareOutputs; ++o) {
@@ -440,6 +504,13 @@ private:
     float pinkB5 = 0.0f;
     float pinkB6 = 0.0f;
     uint32_t noiseSeed{12345};
+
+    alignas(64) std::array<std::atomic<float>, 24> inputPeaks{};
+    alignas(64) std::array<std::atomic<float>, 8> busPeaks{};
+    std::atomic<float> masterPeak{0.0f};
+
+    std::atomic<float> masterVolume{0.8f};
+    std::atomic<bool> masterMuted{false};
 
     AudioRecorderManager* m_recorder = nullptr;
     std::atomic<bool> m_recordingArmed{false};
