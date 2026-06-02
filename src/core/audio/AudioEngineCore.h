@@ -117,11 +117,15 @@ public:
     }
 
     void setRoute(uint32_t src, uint32_t dest, float gain, TapPoint tap) noexcept {
-        routingMatrix.setRoute(src, dest, gain, tap);
+        if (src < 24 && dest < 8) {
+            routingMatrix.setRoute(src, dest, gain, tap);
+        }
     }
 
     void unpatchRoute(uint32_t src, uint32_t dest) noexcept {
-        routingMatrix.setRoute(src, dest, 0.0f, TapPoint::PostFader);
+        if (src < 24 && dest < 8) {
+            routingMatrix.setRoute(src, dest, 0.0f, TapPoint::PostFader);
+        }
     }
 
     void setOutputPatch(uint32_t hwOutputIdx, uint32_t busIdx) noexcept {
@@ -391,8 +395,8 @@ private:
     std::array<const float*, InputChannelsCount> inputBufferPtrs;
     std::array<float*, OutputChannelsCount> outputBufferPtrs;
 
-    alignas(16) std::array<float, 1024> dummyBuffer{};
-    alignas(16) std::array<float, 1024> dummySummingBuffer{};
+    alignas(16) std::array<float, MaxBlockSize> dummyBuffer{};
+    alignas(16) std::array<float, MaxBlockSize> dummySummingBuffer{};
 
     std::atomic<size_t> activeInputsCount{24};
     std::atomic<size_t> activeBusesCount{8};

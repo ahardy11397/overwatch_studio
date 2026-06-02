@@ -207,11 +207,11 @@ TEST(AudioRecorderManagerTest, VerifyAsynchronousWriting) {
     std::filesystem::remove_all("test_session");
 }
 
-TEST(DynamicAudioEngineTest, VerifyDynamicReconfiguration) {
-    AudioEngineCore core;
-    core.configureEngine(12, 4, 4, 4);
+TEST_F(DynamicAudioEngineTest, VerifyDynamicReconfiguration) {
+    auto core = std::make_unique<AudioEngineCore>();
+    core->configureEngine(12, 4, 4, 4);
     
-    auto& faderStrips = core.getFaderStrips();
+    auto& faderStrips = core->getFaderStrips();
     
     // First 12 should be input strips
     for (size_t i = 0; i < 12; ++i) {
@@ -231,13 +231,13 @@ TEST(DynamicAudioEngineTest, VerifyDynamicReconfiguration) {
     }
 }
 
-TEST(DynamicAudioEngineTest, VerifyRealtimeRecordStreaming) {
-    AudioEngineCore core;
+TEST_F(DynamicAudioEngineTest, VerifyRealtimeRecordStreaming) {
+    auto core = std::make_unique<AudioEngineCore>();
     AudioRecorderManager recorder;
     
     recorder.initialize(2, "test_streaming_session");
-    core.setRecorder(&recorder);
-    core.setRecordingArmed(true);
+    core->setRecorder(&recorder);
+    core->setRecordingArmed(true);
     
     recorder.startSession(48000);
     
@@ -249,7 +249,7 @@ TEST(DynamicAudioEngineTest, VerifyRealtimeRecordStreaming) {
     
     // Run IOCallback multiple times to accumulate samples and stream
     for (int i = 0; i < 10; ++i) {
-        core.audioDeviceIOCallbackWithContext(inputs, 2, outputs, 2, 256, nullptr);
+        core->audioDeviceIOCallbackWithContext(inputs, 2, outputs, 2, 256, nullptr);
     }
     
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
@@ -289,21 +289,21 @@ TEST(RoutingPatchMapTest, VerifyTypesAndCommands) {
 }
 
 TEST(AudioEngineCoreTest, VerifyPipelineStages) {
-    AudioEngineCore engine;
-    engine.configureEngine(24, 8, 8, 8);
+    auto engine = std::make_unique<AudioEngineCore>();
+    engine->configureEngine(24, 8, 8, 8);
     
     // Patch channel 0 to Generator (1kHz Sine)
-    engine.setInputPatch(0, AudioSourceType::Generator, 0); // 0 = Sine
+    engine->setInputPatch(0, AudioSourceType::Generator, 0); // 0 = Sine
     // Route channel 0 to MST L (Bus 0)
-    engine.setRoute(0, 0, 1.0f, TapPoint::PostFader);
+    engine->setRoute(0, 0, 1.0f, TapPoint::PostFader);
     // Patch Output Port 0 to MST L (Bus 0)
-    engine.setOutputPatch(0, 0);
+    engine->setOutputPatch(0, 0);
 
     std::vector<float> outputBuffer(256, 0.0f);
     std::vector<float*> outputPtrs(8, outputBuffer.data());
     
     // Run engine process callback
-    engine.audioDeviceIOCallbackWithContext(
+    engine->audioDeviceIOCallbackWithContext(
         nullptr, 0,
         outputPtrs.data(), 8,
         256, nullptr
