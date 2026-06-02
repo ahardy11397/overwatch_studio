@@ -44,6 +44,7 @@ class AudioEngineCore : public juce::AudioIODeviceCallback {
 public:
     static constexpr size_t InputChannelsCount = 24;
     static constexpr size_t OutputChannelsCount = 8;
+    static constexpr size_t MaxBlockSize = 2048;
 
     static constexpr size_t MaxInputs = 64;
     static constexpr size_t MaxBuses = 16;
@@ -164,6 +165,9 @@ public:
     ) override REALTIME_SAFE {
         (void)context;
         size_t samples = static_cast<size_t>(numSamples);
+        if (samples > MaxBlockSize) {
+            samples = MaxBlockSize;
+        }
         size_t hardwareInputs = std::min(static_cast<size_t>(numInputChannels), InputChannelsCount);
         size_t hardwareOutputs = std::min(static_cast<size_t>(numOutputChannels), OutputChannelsCount);
 
@@ -206,7 +210,7 @@ public:
         }
 
         // 2. Stage 1: Input Patching (Source -> Temp Channels)
-        alignas(16) std::array<std::array<float, 256>, 24> channelBuffers{};
+        alignas(16) std::array<std::array<float, MaxBlockSize>, 24> channelBuffers{};
         for (size_t c = 0; c < 24; ++c) {
             float* dest = channelBuffers[c].data();
             const auto& patch = inputPatchMap[c];
@@ -225,7 +229,8 @@ public:
                     }
                 } else { // Pink Noise (Paul Kellet's refined method)
                     for (size_t s = 0; s < samples; ++s) {
-                        float white = (static_cast<float>(rand()) / static_cast<float>(RAND_MAX)) * 2.0f - 1.0f;
+                        noiseSeed = noiseSeed * 196314165 + 907633385;
+                        float white = (static_cast<float>(noiseSeed) / 4294967295.0f) * 2.0f - 1.0f;
                         pinkB0 = 0.99886f * pinkB0 + white * 0.0555179f;
                         pinkB1 = 0.99332f * pinkB1 + white * 0.0750759f;
                         pinkB2 = 0.96900f * pinkB2 + white * 0.1538520f;
@@ -269,20 +274,18 @@ public:
                 }
             }
 
-            if (faderStrips[c] != nullptr) {
-                // Apply standard channel DSP
-                faderStrips[c]->processBlock(buf, samples);
-                
-                // Apply DCA Gain multiplication and DCA Mutes
-                float dcaFinalGain = dcaMutedActive ? 0.0f : dcaGainMultiplier;
-                for (size_t s = 0; s < samples; ++s) {
-                    buf[s] *= dcaFinalGain;
-                }
+            // Process using channelPool[c] directly
+            channelPool[c].processBlock(buf, samples);
+            
+            // Apply DCA Gain multiplication and DCA Mutes
+            float dcaFinalGain = dcaMutedActive ? 0.0f : dcaGainMultiplier;
+            for (size_t s = 0; s < samples; ++s) {
+                buf[s] *= dcaFinalGain;
             }
         }
 
         // 4. Stage 3: Internal Matrix Summing (Buses 0-7)
-        alignas(16) std::array<std::array<float, 256>, 8> busBuffers{};
+        alignas(16) std::array<std::array<float, MaxBlockSize>, 8> busBuffers{};
         for (size_t b = 0; b < 8; ++b) {
             busBuffers[b].fill(0.0f);
         }
@@ -415,6 +418,7 @@ private:
     float pinkB4 = 0.0f;
     float pinkB5 = 0.0f;
     float pinkB6 = 0.0f;
+    uint32_t noiseSeed{12345};
 
     AudioRecorderManager* m_recorder = nullptr;
     std::atomic<bool> m_recordingArmed{false};
