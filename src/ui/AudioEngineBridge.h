@@ -64,6 +64,11 @@ class AudioEngineBridge : public QObject {
     Q_PROPERTY(QList<bool> channelSoloStates READ channelSoloStates NOTIFY channelSoloStatesChanged)
     Q_PROPERTY(QList<bool> channelSoloModes READ channelSoloModes NOTIFY channelSoloModesChanged)
 
+    // Peaks properties
+    Q_PROPERTY(QList<double> channelPeaks READ channelPeaks NOTIFY peakMeterChanged)
+    Q_PROPERTY(QList<double> busPeaks READ busPeaks NOTIFY peakMeterChanged)
+    Q_PROPERTY(float masterPeak READ masterPeak NOTIFY peakMeterChanged)
+
     // Lists for DSP Parameters
     Q_PROPERTY(QList<double> channelTrims READ channelTrims NOTIFY dspChanged)
     Q_PROPERTY(QList<bool> channelPhases READ channelPhases NOTIFY dspChanged)
@@ -189,6 +194,10 @@ public:
     QList<bool> channelSoloStates() const { return m_channelSoloStates; }
     QList<bool> channelSoloModes() const { return m_channelSoloModes; }
 
+    QList<double> channelPeaks() const { return m_channelPeaks; }
+    QList<double> busPeaks() const { return m_busPeaks; }
+    float masterPeak() const { return m_masterPeak; }
+
     QList<double> channelTrims() const { return m_channelTrims; }
     QList<bool> channelPhases() const { return m_channelPhases; }
     QList<double> channelHPFCutoffs() const { return m_channelHPFCutoffs; }
@@ -301,6 +310,7 @@ public:
     Q_INVOKABLE void recoverDevice();
     Q_INVOKABLE void setSheddingLevel(int level);
     Q_INVOKABLE void notifyFaderChanged(int chIdx, double val);
+    Q_INVOKABLE void setChannelMuted(int chIdx, bool muted);
 
 signals:
     void faderVolumeChanged();
@@ -456,6 +466,10 @@ private:
     std::array<std::unique_ptr<WindowsProcessCapture>, 32> m_processCaptures;
     bool m_recordArmed = false;
     bool m_recordingActive = false;
+
+    QList<double> m_channelPeaks;
+    QList<double> m_busPeaks;
+    float m_masterPeak = 0.0f;
 
     bool pushCommand(const RoutingCommand& cmd);
 };

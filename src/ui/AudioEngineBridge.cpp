@@ -164,6 +164,30 @@ AudioEngineBridge::AudioEngineBridge(QObject* parent)
             1U
         });
     }
+
+    // Initialize peaks backing fields
+    for (int i = 0; i < 24; ++i) m_channelPeaks.append(0.0);
+    for (int i = 0; i < 8; ++i) m_busPeaks.append(0.0);
+
+    // Setup default startup routes: route all 24 channels to Bus 0 (MST L) and Bus 1 (MST R) post-fader
+    for (int i = 0; i < 24; ++i) {
+        m_uiRoutes.append({i, 0, 1.0, 2});
+        m_uiRoutes.append({i, 1, 1.0, 2});
+        pushCommand(RoutingCommand{
+            RoutingCommandType::SetRoute,
+            static_cast<uint32_t>(i),
+            0,
+            1.0f,
+            2
+        });
+        pushCommand(RoutingCommand{
+            RoutingCommandType::SetRoute,
+            static_cast<uint32_t>(i),
+            1,
+            1.0f,
+            2
+        });
+    }
 }
 
 AudioEngineBridge::~AudioEngineBridge() {
@@ -188,6 +212,13 @@ AudioEngineBridge::~AudioEngineBridge() {
 void AudioEngineBridge::setFaderVolume(float vol) {
     if (!qFuzzyCompare(m_faderVolume, vol)) {
         m_faderVolume = vol;
+        pushCommand(RoutingCommand{
+            RoutingCommandType::SetChannelVolume,
+            0,
+            3, // Master
+            vol,
+            0
+        });
         emit faderVolumeChanged();
     }
 }
@@ -527,17 +558,72 @@ void AudioEngineBridge::setSheddingLevel(int level) {
 }
 
 void AudioEngineBridge::notifyFaderChanged(int chIdx, double val) {
-    // Notify control surfaces
+    uint32_t actualIdx = 0;
+    uint32_t type = 0; // 0=Input, 1=Bus, 2=Aux, 3=Master
+    if (chIdx < 24) {
+        actualIdx = chIdx;
+        type = 0;
+    } else if (chIdx >= 64 && chIdx < 72) {
+        actualIdx = chIdx - 64;
+        type = 1;
+    } else if (chIdx >= 80 && chIdx < 88) {
+        actualIdx = chIdx - 80;
+        type = 2;
+    } else {
+        return;
+    }
+
+    pushCommand(RoutingCommand{
+        RoutingCommandType::SetChannelVolume,
+        actualIdx,
+        type,
+        static_cast<float>(val),
+        0
+    });
+
     QString logMsg = QString("Channel %1 Volume Target Updated -> %2").arg(chIdx + 1).arg(20 * log10(val), 0, 'f', 1) + " dB";
     qDebug() << logMsg;
 }
 
 void AudioEngineBridge::processAudioFeedback() {
-    // Simulate real-time level feedback
-    static double angle = 0.0;
-    angle += 0.05;
-    m_peakMeter = static_cast<float>(0.3 + 0.1 * std::sin(angle));
-    emit peakMeterChanged();
+    if (!m_engine) return;
+
+    bool changed = false;
+    constexpr float decayFactor = 0.88f; // Peak meter smooth release decay factor
+
+    for (int i = 0; i < 24; ++i) {
+        float rawPeak = m_engine->getInputPeak(i).load(std::memory_order_relaxed);
+        double current = m_channelPeaks[i];
+        double next = std::max(static_cast<double>(rawPeak), current * decayFactor);
+        if (next < 0.001) next = 0.0;
+        if (!qFuzzyCompare(current, next)) {
+            m_channelPeaks[i] = next;
+            changed = true;
+        }
+    }
+
+    for (int i = 0; i < 8; ++i) {
+        float rawPeak = m_engine->getBusPeak(i).load(std::memory_order_relaxed);
+        double current = m_busPeaks[i];
+        double next = std::max(static_cast<double>(rawPeak), current * decayFactor);
+        if (next < 0.001) next = 0.0;
+        if (!qFuzzyCompare(current, next)) {
+            m_busPeaks[i] = next;
+            changed = true;
+        }
+    }
+
+    float rawMaster = m_engine->getMasterPeak().load(std::memory_order_relaxed);
+    float nextMaster = std::max(rawMaster, m_masterPeak * decayFactor);
+    if (nextMaster < 0.001f) nextMaster = 0.0f;
+    if (!qFuzzyCompare(m_masterPeak, nextMaster)) {
+        m_masterPeak = nextMaster;
+        changed = true;
+    }
+
+    if (changed) {
+        emit peakMeterChanged();
+    }
 }
 
 void AudioEngineBridge::setActiveSampleRate(int rate) {
@@ -759,4 +845,32 @@ void AudioEngineBridge::configureShowChannels(int numInputs, int numBuses, int n
                                   static_cast<size_t>(numAuxes),
                                   static_cast<size_t>(numDCAs));
     }
+}
+
+void AudioEngineBridge::setChannelMuted(int chIdx, bool muted) {
+    uint32_t actualIdx = 0;
+    uint32_t type = 0; // 0=Input, 1=Bus, 2=Aux, 3=Master
+    if (chIdx < 24) {
+        actualIdx = chIdx;
+        type = 0;
+    } else if (chIdx == 24) {
+        actualIdx = 0;
+        type = 3;
+    } else if (chIdx >= 64 && chIdx < 72) {
+        actualIdx = chIdx - 64;
+        type = 1;
+    } else if (chIdx >= 80 && chIdx < 88) {
+        actualIdx = chIdx - 80;
+        type = 2;
+    } else {
+        return;
+    }
+
+    pushCommand(RoutingCommand{
+        RoutingCommandType::SetChannelMute,
+        actualIdx,
+        type,
+        0.0f,
+        muted ? 1U : 0U
+    });
 }
