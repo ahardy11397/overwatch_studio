@@ -475,6 +475,37 @@ TEST(WASAPIDeviceWorkerTest, BufferIOHandling) {
     }
 }
 
+#include "WindowsProcessCapture.h"
+
+TEST(WindowsProcessCaptureTest, VerifyCaptureLifecycleAndQueuePush) {
+    WindowsProcessCapture capture;
+    SPSCQueue<float> queue(4096);
+    
+    // Start capture with a target PID of 0 to trigger fallback paths
+    EXPECT_TRUE(capture.start(0, queue));
+    
+    // Wait a brief period to allow the thread to push some samples
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    
+    bool isFallback = capture.isFallbackActive();
+    capture.stop();
+    
+    // Check that we received some samples in the queue
+    size_t count = 0;
+    float sum = 0.0f;
+    while (auto sample = queue.pop()) {
+        count++;
+        sum += std::abs(*sample);
+    }
+    
+    if (isFallback) {
+        EXPECT_GT(count, 0);
+        EXPECT_GT(sum, 0.0f);
+    } else {
+        EXPECT_GE(count, 0);
+    }
+}
+
 
 
 

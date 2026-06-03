@@ -95,6 +95,8 @@ add_executable(AudioEngineTests
     tests/VideoEngineTests.cpp
     src/core/audio/WASAPIDeviceWorker.cpp
     src/core/audio/WASAPIDeviceWorker.h
+    src/core/audio/WindowsProcessCapture.cpp
+    src/core/audio/WindowsProcessCapture.h
 )
 target_link_libraries(AudioEngineTests PRIVATE
     overwatch_engine
