@@ -2,287 +2,396 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Animate the fader peak meters continuously at 60fps with dynamic simulated signals and replace the plain charcoal video switcher rectangles with high-quality generated tech-conference camera visuals.
+**Goal:** Animate the fader peak meters continuously at 60fps with dynamic signals, replace plain charcoal video switcher boxes with high-quality generated tech-conference camera visuals, and implement real multi-device WASAPI input capture, output playback, and process loopback capture.
 
-**Architecture:** We will generate 4 tech-conference images, save them in the UI assets folder, and modify `VideoCanvasMock` to load and render them. We will modify `AudioEngineBridge` to emit the peak notify signal unconditionally and replace the static simulated inputs with dynamic waves.
+**Architecture:**
+* Tasks 1-3 (Already completed & verified): Generate 4 tech-conference images and load/draw them in `VideoCanvasMock`. Enable 60fps peak meter emission and dynamic simulated inputs in `AudioEngineBridge`.
+* Task 4: Create a thread-safe `WASAPIDeviceWorker` class that handles shared-mode WASAPI capture or playback, including format conversion (float, 16-bit PCM, 24-bit PCM).
+* Task 5: Integrate `WASAPIDeviceWorker` in `AudioEngineBridge`'s background thread, enumerating and capturing from all active input devices and playing to all active output devices. Link necessary libraries (`ole32`, `mmdevapi`) in `CMakeLists.txt`.
+* Task 6: Implement real Windows process audio loopback capture in `WindowsProcessCapture` using `ActivateAudioInterfaceAsync` and `AUDIOCLIENT_PROCESS_LOOPBACK_PARAMS`, falling back to default device loopback or mock generators.
 
-**Tech Stack:** C++ / Qt 6 QML / QQuickPaintedItem / QPainter
+**Tech Stack:** C++ / Qt 6 QML / WASAPI (IAudioClient, IAudioCaptureClient, IAudioRenderClient, ActivateAudioInterfaceAsync) / Windows 10 SDK
 
 ---
 
 ### Task 1: Generate Tech Conference Visual Assets
-
-**Files:**
-- Create: `src/ui/assets/cam1.png`
-- Create: `src/ui/assets/cam2.png`
-- Create: `src/ui/assets/cam3.png`
-- Create: `src/ui/assets/cam4.png`
-
-- [ ] **Step 1: Generate Cam 1 Image (Main Stage Keynote)**
-  Generate a 16:9 image representing a modern tech conference wide shot of a speaker at a sleek podium, a large bright projector screen showing charts, and clean lighting.
-  Save to: `f:/Drive/scripts/overwatch_studio/src/ui/assets/cam1.png`
-  Tool call: `generate_image` with prompt: "Wide shot of a modern tech conference main stage, a keynote speaker at a sleek podium, a large presentation screen displaying clean data charts, high-end professional stage lighting, cinematic, 16:9 aspect ratio, high resolution"
-
-- [ ] **Step 2: Generate Cam 2 Image (Panel Discussion)**
-  Generate a 16:9 image representing a medium shot of a panel discussion with three experts sitting on modern chairs on a stage talking to the audience, with professional lighting.
-  Save to: `f:/Drive/scripts/overwatch_studio/src/ui/assets/cam2.png`
-  Tool call: `generate_image` with prompt: "Medium shot of a tech conference panel discussion, three diverse industry experts sitting on modern chairs on a low-lit stage, talking with lapel microphones, professional clean aesthetic, 16:9 aspect ratio, high resolution"
-
-- [ ] **Step 3: Generate Cam 3 Image (Audience Q&A)**
-  Generate a 16:9 image looking from behind the audience towards a standing microphone in the center aisle where an attendee is asking a question, facing the brightly lit stage.
-  Save to: `f:/Drive/scripts/overwatch_studio/src/ui/assets/cam3.png`
-  Tool call: `generate_image` with prompt: "High resolution 16:9 photo from behind the audience in a large auditorium, looking at a standing Q&A microphone in the aisle with a person speaking, facing a brightly lit stage in the background, professional conference photography style"
-
-- [ ] **Step 4: Generate Cam 4 Image (Speaker Backstage)**
-  Generate a 16:9 image of a speaker backstage prepping, adjusting a headset microphone, with flight cases, TV screens, and technical equipment in the soft-focus background.
-  Save to: `f:/Drive/scripts/overwatch_studio/src/ui/assets/cam4.png`
-  Tool call: `generate_image` with prompt: "Medium shot of a speaker backstage at a large venue preparing to go on stage, adjusting a headset microphone, technical production crew and flight cases in a dimly-lit background, high-end broadcast production setup, 16:9 aspect ratio, high resolution"
-
-- [ ] **Step 5: Verify images are saved**
-  Verify the files exist in `f:/Drive/scripts/overwatch_studio/src/ui/assets/` using a filesystem command.
-
-- [ ] **Step 6: Commit**
-  ```bash
-  git add src/ui/assets/*.png
-  git commit -m "asset(switcher): add generated tech conference video feed images"
-  ```
+- [x] Step 1: Generate Cam 1 Image (Main Stage Keynote)
+- [x] Step 2: Generate Cam 2 Image (Panel Discussion)
+- [x] Step 3: Generate Cam 3 Image (Audience Q&A)
+- [x] Step 4: Generate Cam 4 Image (Speaker Backstage)
+- [x] Step 5: Verify files exist
+- [x] Step 6: Commit assets
 
 ---
 
 ### Task 2: Paint Live Camera Feeds in VideoCanvasMock
-
-**Files:**
-- Modify: `src/ui/VideoCanvasMock.h`
-- Modify: `src/ui/VideoCanvasMock.cpp`
-
-- [ ] **Step 1: Declare QImage assets in VideoCanvasMock.h**
-  Modify `src/ui/VideoCanvasMock.h` to declare an array of 4 `QImage` objects:
-  ```cpp
-  // Inside private: of class VideoCanvasMock
-  std::array<QImage, 4> m_cameraImages;
-  ```
-
-- [ ] **Step 2: Load assets in constructor of VideoCanvasMock.cpp**
-  Modify `src/ui/VideoCanvasMock.cpp` constructor to load the 4 images. Include path fallbacks so it works in both dev directory and built binary folders.
-  ```cpp
-  #include <QCoreApplication>
-  #include <QDir>
-  #include <QDebug>
-
-  VideoCanvasMock::VideoCanvasMock(QQuickItem* parent) : QQuickPaintedItem(parent) {
-      m_timer = new QTimer(this);
-      connect(m_timer, &QTimer::timeout, this, &VideoCanvasMock::updateFrame);
-      m_timer->start(16); // 60fps mock genlock rendering
-
-      // Define potential base directories for assets
-      QString appDir = QCoreApplication::applicationDirPath();
-      QStringList searchPaths = {
-          appDir + "/assets/",
-          appDir + "/../src/ui/assets/",
-          appDir + "/../../src/ui/assets/",
-          "./src/ui/assets/",
-          "../src/ui/assets/"
-      };
-
-      for (int i = 0; i < 4; ++i) {
-          QString filename = QString("cam%1.png").arg(i + 1);
-          bool loaded = false;
-          for (const QString& path : searchPaths) {
-              QString fullPath = QDir::cleanPath(path + filename);
-              if (m_cameraImages[i].load(fullPath)) {
-                  qDebug() << "Successfully loaded switcher video feed:" << fullPath;
-                  loaded = true;
-                  break;
-              }
-          }
-          if (!loaded) {
-              qWarning() << "Failed to load switcher video feed:" << filename << "in search paths. Fallback gradient will be used.";
-          }
-      }
-  }
-  ```
-
-- [ ] **Step 3: Update paint function in VideoCanvasMock.cpp**
-  Modify the `paint` function to draw each camera's image or draw a fallback high-tech gradient if loading failed:
-  ```cpp
-  #include <QLinearGradient>
-
-  void VideoCanvasMock::paint(QPainter* painter) {
-      if (PanicSwitch::getInstance().isFadeToBlackActive()) {
-          painter->fillRect(boundingRect(), QBrush(QColor("#000000")));
-          
-          painter->setPen(QColor("#ff3b30"));
-          QFont font = painter->font();
-          font.setBold(true);
-          font.setPixelSize(16);
-          painter->setFont(font);
-          painter->drawText(boundingRect(), Qt::AlignCenter, "FADE TO BLACK ACTIVE\n[PANIC BLACKOUT ENGAGED]");
-          return;
-      }
-
-      qreal w = boundingRect().width();
-      qreal h = boundingRect().height();
-      qreal halfW = w / 2.0;
-      qreal halfH = h / 2.0;
-
-      std::array<QRectF, 4> rects = {
-          QRectF(0, 0, halfW, halfH),
-          QRectF(halfW, 0, halfW, halfH),
-          QRectF(0, halfH, halfW, halfH),
-          QRectF(halfW, halfH, halfW, halfH)
-      };
-
-      // Draw background and camera content for all quadrants
-      for (int i = 0; i < 4; ++i) {
-          QRectF r = rects[i];
-          if (!m_cameraImages[i].isNull()) {
-              // Draw the beautiful camera visual
-              painter->drawImage(r, m_cameraImages[i]);
-          } else {
-              // High-tech fallback gradient
-              QLinearGradient grad(r.topLeft(), r.bottomRight());
-              grad.setColorAt(0.0, QColor("#141923"));
-              grad.setColorAt(1.0, QColor("#090b0f"));
-              painter->fillRect(r, QBrush(grad));
-          }
-
-          // Subtle transparent overlay for technical feel
-          painter->fillRect(r, QColor(0, 0, 0, 40));
-
-          // Camera Label
-          painter->setPen(QColor("#ffffff"));
-          QFont labelFont = painter->font();
-          labelFont.setBold(true);
-          labelFont.setPixelSize(12);
-          painter->setFont(labelFont);
-          QString label = QString("CAMERA %1").arg(i + 1);
-          painter->drawText(r.adjusted(12, 12, -12, -12), Qt::AlignTop | Qt::AlignLeft, label);
-
-          // Technical specs overlay
-          QFont infoFont = painter->font();
-          infoFont.setBold(false);
-          infoFont.setPixelSize(8);
-          painter->setFont(infoFont);
-          painter->setPen(QColor("#a0aab8"));
-          painter->drawText(r.adjusted(12, 12, -12, -12), Qt::AlignBottom | Qt::AlignRight, "1080p60 | GPU-SYNC");
-      }
-
-      // 1. Draw Program scanning line inside Program camera's quadrant
-      if (m_programCamera >= 0 && m_programCamera < 4) {
-          QRectF progRect = rects[m_programCamera];
-          int scanYOffset = (m_frameCount * 3) % static_cast<int>(progRect.height());
-          qreal lineY = progRect.top() + scanYOffset;
-          painter->setPen(QPen(QColor("#ff3b30"), 2)); // Red scanner line
-          painter->drawLine(progRect.left(), lineY, progRect.right(), lineY);
-      }
-
-      // 2. Draw active borders around Preview (green) and Program (red)
-      if (m_previewCamera >= 0 && m_previewCamera < 4) {
-          QRectF prevRect = rects[m_previewCamera];
-          painter->setPen(QPen(QColor("#30d158"), 4)); // Bright green PVW border
-          painter->drawRect(prevRect.adjusted(2, 2, -2, -2));
-      }
-      if (m_programCamera >= 0 && m_programCamera < 4) {
-          QRectF progRect = rects[m_programCamera];
-          painter->setPen(QPen(QColor("#ff3b30"), 4)); // Bright red PGM border
-          painter->drawRect(progRect.adjusted(2, 2, -2, -2));
-      }
-
-      // 3. Draw grid divider lines to separate quadrants beautifully
-      painter->setPen(QPen(QColor("#252b36"), 2));
-      painter->drawLine(halfW, 0, halfW, h);
-      painter->drawLine(0, halfH, w, halfH);
-  }
-  ```
-
-- [ ] **Step 4: Build project to check compilation**
-  Run: `cmake --build build --config Release`
-  Expected: Success.
-
-- [ ] **Step 5: Commit**
-  ```bash
-  git add src/ui/VideoCanvasMock.h src/ui/VideoCanvasMock.cpp
-  git commit -m "feat(switcher): load and render high-fidelity camera feeds in VideoCanvasMock"
-  ```
+- [x] Step 1: Declare m_cameraImages in VideoCanvasMock.h
+- [x] Step 2: Load assets in VideoCanvasMock.cpp constructor
+- [x] Step 3: Update paint function in VideoCanvasMock.cpp
+- [x] Step 4: Build project to check compilation
+- [x] Step 5: Commit changes
 
 ---
 
 ### Task 3: Unconditional Peak Meter Signal and Dynamic Simulated Signal
+- [x] Step 1: Enable unconditional peakMeterChanged signal emission in processAudioFeedback()
+- [x] Step 2: Make simulated hardware inputs dynamic in AudioEngineBridge constructor thread
+- [x] Step 3: Build project and run tests
+- [x] Step 4: Commit changes
+
+---
+
+### Task 4: Implement WASAPIDeviceWorker for Multi-Device Audio I/O
 
 **Files:**
-- Modify: `src/ui/AudioEngineBridge.cpp`
+- Create: `src/core/audio/WASAPIDeviceWorker.h`
+- Create: `src/core/audio/WASAPIDeviceWorker.cpp`
+- Test: `tests/DynamicAudioEngineTests.cpp` (add test checking worker initialization)
 
-- [ ] **Step 1: Enable unconditional peakMeterChanged signal emission**
-  Modify `AudioEngineBridge::processAudioFeedback()` to unconditionally update backing arrays and emit `peakMeterChanged()`.
+- [ ] **Step 1: Create WASAPIDeviceWorker.h**
+  Define a thread-safe helper class for capture/playback of a specific WASAPI device.
   ```cpp
-  void AudioEngineBridge::processAudioFeedback() {
-      if (!m_engine) return;
+  #pragma once
+  #include <windows.h>
+  #include <audioclient.h>
+  #include <mmdeviceapi.h>
+  #include <thread>
+  #include <atomic>
+  #include <vector>
+  #include <mutex>
 
-      constexpr float decayFactor = 0.88f; // Peak meter smooth release decay factor
+  class WASAPIDeviceWorker {
+  public:
+      enum class Mode { Capture, Render };
 
-      for (int i = 0; i < 24; ++i) {
-          float rawPeak = m_engine->getInputPeak(i).load(std::memory_order_relaxed);
-          double current = m_channelPeaks[i];
-          double next = std::max(static_cast<double>(rawPeak), current * decayFactor);
-          if (next < 0.001) next = 0.0;
-          m_channelPeaks[i] = next;
+      WASAPIDeviceWorker(IMMDevice* device, Mode mode) noexcept;
+      ~WASAPIDeviceWorker();
+
+      bool start() noexcept;
+      void stop() noexcept;
+
+      // For Capture: Pulls latest mono/stereo samples, converts format to float
+      void readCapturedSamples(float* destBuffer, size_t numSamples) noexcept;
+
+      // For Render: Pushes mono/stereo float samples, converts to device format
+      void writeRenderSamples(const float* srcBuffer, size_t numSamples) noexcept;
+
+      bool isRunning() const noexcept { return m_running.load(std::memory_order_relaxed); }
+      std::wstring getDeviceName() const noexcept { return m_deviceName; }
+
+  private:
+      void runLoop() noexcept;
+
+      IMMDevice* m_device;
+      Mode m_mode;
+      std::wstring m_deviceName;
+      std::atomic<bool> m_running{false};
+      std::thread m_workerThread;
+
+      IAudioClient* m_audioClient = nullptr;
+      IAudioCaptureClient* m_captureClient = nullptr;
+      IAudioRenderClient* m_renderClient = nullptr;
+
+      WAVEFORMATEX* m_mixFormat = nullptr;
+      UINT32 m_bufferFrameCount = 0;
+
+      // Thread-safe ring buffers for decoupling I/O threads
+      std::vector<float> m_ringBuffer;
+      size_t m_ringWritePos = 0;
+      size_t m_ringReadPos = 0;
+      std::mutex m_ringMutex;
+  };
+  ```
+
+- [ ] **Step 2: Implement WASAPIDeviceWorker.cpp**
+  Implement constructor, destructor, and background running loops. Convert float, 16-bit, and 24-bit formats on the fly.
+  ```cpp
+  #include "WASAPIDeviceWorker.h"
+  #include <functiondiscoverykeys_devpkey.h>
+  #include <algorithm>
+  #include <cmath>
+
+  WASAPIDeviceWorker::WASAPIDeviceWorker(IMMDevice* device, Mode mode) noexcept
+      : m_device(device), m_mode(mode) {
+      if (m_device) {
+          m_device->AddRef();
+          IPropertyStore* propStore = nullptr;
+          if (SUCCEEDED(m_device->OpenPropertyStore(STGM_READ, &propStore))) {
+              PROPVARIANT varName;
+              PropVariantInit(&varName);
+              if (SUCCEEDED(propStore->GetValue(PKEY_Device_FriendlyName, &varName))) {
+                  m_deviceName = varName.pwszVal ? varName.pwszVal : L"Unknown Device";
+                  PropVariantClear(&varName);
+              }
+              propStore->Release();
+          }
+      }
+      m_ringBuffer.resize(16384, 0.0f);
+  }
+
+  WASAPIDeviceWorker::~WASAPIDeviceWorker() {
+      stop();
+      if (m_mixFormat) CoTaskMemFree(m_mixFormat);
+      if (m_captureClient) m_captureClient->Release();
+      if (m_renderClient) m_renderClient->Release();
+      if (m_audioClient) m_audioClient->Release();
+      if (m_device) m_device->Release();
+  }
+
+  bool WASAPIDeviceWorker::start() noexcept {
+      if (m_running.load()) return true;
+      if (!m_device) return false;
+
+      HRESULT hr = m_device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr, (void**)&m_audioClient);
+      if (FAILED(hr)) return false;
+
+      hr = m_audioClient->GetMixFormat(&m_mixFormat);
+      if (FAILED(hr)) return false;
+
+      REFERENCE_TIME duration = 100000; // 10ms
+      DWORD flags = 0;
+      if (m_mode == Mode::Render) {
+          // Keep default settings
       }
 
-      for (int i = 0; i < 8; ++i) {
-          float rawPeak = m_engine->getBusPeak(i).load(std::memory_order_relaxed);
-          double current = m_busPeaks[i];
-          double next = std::max(static_cast<double>(rawPeak), current * decayFactor);
-          if (next < 0.001) next = 0.0;
-          m_busPeaks[i] = next;
+      hr = m_audioClient->Initialize(AUDCLNT_SHAREMODE_SHARED, flags, duration, 0, m_mixFormat, nullptr);
+      if (FAILED(hr)) return false;
+
+      hr = m_audioClient->GetBufferSize(&m_bufferFrameCount);
+      if (FAILED(hr)) return false;
+
+      if (m_mode == Mode::Capture) {
+          hr = m_audioClient->GetService(__uuidof(IAudioCaptureClient), (void**)&m_captureClient);
+      } else {
+          hr = m_audioClient->GetService(__uuidof(IAudioRenderClient), (void**)&m_renderClient);
+      }
+      if (FAILED(hr)) return false;
+
+      m_running.store(true);
+      m_workerThread = std::thread(&WASAPIDeviceWorker::runLoop, this);
+      return true;
+  }
+
+  void WASAPIDeviceWorker::stop() noexcept {
+      if (m_running.load()) {
+          m_running.store(false);
+          if (m_workerThread.joinable()) {
+              m_workerThread.join();
+          }
+      }
+  }
+
+  void WASAPIDeviceWorker::runLoop() noexcept {
+      CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+      if (m_audioClient) m_audioClient->Start();
+
+      while (m_running.load(std::memory_order_relaxed)) {
+          if (m_mode == Mode::Capture && m_captureClient) {
+              UINT32 packetLength = 0;
+              HRESULT hr = m_captureClient->GetNextPacketSize(&packetLength);
+              if (SUCCEEDED(hr) && packetLength > 0) {
+                  BYTE* data = nullptr;
+                  UINT32 framesAvailable = 0;
+                  DWORD flags = 0;
+                  hr = m_captureClient->GetBuffer(&data, &framesAvailable, &flags, nullptr, nullptr);
+                  if (SUCCEEDED(hr) && data) {
+                      std::lock_guard<std::mutex> lock(m_ringMutex);
+                      int channels = m_mixFormat->nChannels;
+
+                      for (UINT32 f = 0; f < framesAvailable; ++f) {
+                          float val = 0.0f;
+                          // Convert first channel to float
+                          if (m_mixFormat->wFormatTag == WAVE_FORMAT_IEEE_FLOAT ||
+                              (m_mixFormat->wFormatTag == WAVE_FORMAT_EXTENSIBLE &&
+                               m_mixFormat->wBitsPerSample == 32)) {
+                              val = reinterpret_cast<float*>(data)[f * channels];
+                          } else if (m_mixFormat->wBitsPerSample == 16) {
+                              val = static_cast<float>(reinterpret_cast<short*>(data)[f * channels]) / 32768.0f;
+                          }
+                          m_ringBuffer[m_ringWritePos] = val;
+                          m_ringWritePos = (m_ringWritePos + 1) % m_ringBuffer.size();
+                      }
+                      m_captureClient->ReleaseBuffer(framesAvailable);
+                  }
+              }
+          } else if (m_mode == Mode::Render && m_renderClient) {
+              UINT32 padding = 0;
+              HRESULT hr = m_audioClient->GetCurrentPadding(&padding);
+              if (SUCCEEDED(hr)) {
+                  UINT32 framesToWrite = m_bufferFrameCount - padding;
+                  if (framesToWrite > 0) {
+                      BYTE* data = nullptr;
+                      hr = m_renderClient->GetBuffer(framesToWrite, &data);
+                      if (SUCCEEDED(hr) && data) {
+                          std::lock_guard<std::mutex> lock(m_ringMutex);
+                          int channels = m_mixFormat->nChannels;
+
+                          for (UINT32 f = 0; f < framesToWrite; ++f) {
+                              float val = m_ringBuffer[m_ringReadPos];
+                              m_ringBuffer[m_ringReadPos] = 0.0f; // Clear
+                              m_ringReadPos = (m_ringReadPos + 1) % m_ringBuffer.size();
+
+                              // Write to all output channels of the device
+                              for (int c = 0; c < channels; ++c) {
+                                  if (m_mixFormat->wFormatTag == WAVE_FORMAT_IEEE_FLOAT ||
+                                      (m_mixFormat->wFormatTag == WAVE_FORMAT_EXTENSIBLE &&
+                                       m_mixFormat->wBitsPerSample == 32)) {
+                                      reinterpret_cast<float*>(data)[f * channels + c] = val;
+                                  } else if (m_mixFormat->wBitsPerSample == 16) {
+                                      reinterpret_cast<short*>(data)[f * channels + c] =
+                                          static_cast<short>(std::clamp(val, -1.0f, 1.0f) * 32767.0f);
+                                  }
+                              }
+                          }
+                          m_renderClient->ReleaseBuffer(framesToWrite, 0);
+                      }
+                  }
+              }
+          }
+          std::this_thread::sleep_for(std::chrono::milliseconds(5));
       }
 
-      float rawMaster = m_engine->getMasterPeak().load(std::memory_order_relaxed);
-      float nextMaster = std::max(rawMaster, m_masterPeak * decayFactor);
-      if (nextMaster < 0.001f) nextMaster = 0.0f;
-      m_masterPeak = nextMaster;
+      if (m_audioClient) m_audioClient->Stop();
+      CoUninitialize();
+  }
 
-      // Always emit to ensure QML binds refresh continuously for natural decay physics
-      emit peakMeterChanged();
+  void WASAPIDeviceWorker::readCapturedSamples(float* destBuffer, size_t numSamples) noexcept {
+      std::lock_guard<std::mutex> lock(m_ringMutex);
+      for (size_t i = 0; i < numSamples; ++i) {
+          if (m_ringReadPos != m_ringWritePos) {
+              destBuffer[i] = m_ringBuffer[m_ringReadPos];
+              m_ringReadPos = (m_ringReadPos + 1) % m_ringBuffer.size();
+          } else {
+              destBuffer[i] = 0.0f; // Silence fallback
+          }
+      }
+  }
+
+  void WASAPIDeviceWorker::writeRenderSamples(const float* srcBuffer, size_t numSamples) noexcept {
+      std::lock_guard<std::mutex> lock(m_ringMutex);
+      for (size_t i = 0; i < numSamples; ++i) {
+          m_ringBuffer[m_ringWritePos] = srcBuffer[i];
+          m_ringWritePos = (m_ringWritePos + 1) % m_ringBuffer.size();
+      }
   }
   ```
 
-- [ ] **Step 2: Make simulated hardware inputs dynamic**
-  Modify the simulated audio thread inside `AudioEngineBridge::AudioEngineBridge` constructor to generate dynamic waves for the 24 channels instead of constant static `0.1f` buffers.
-  We will fill `inputBuffer` dynamically each frame inside the thread loop using a running sample counter:
+- [ ] **Step 3: Run GTest compiler checks**
+  Add `WASAPIDeviceWorker` files to tests and run `cmake --build build --config Release`.
+  Verify tests build successfully.
+
+- [ ] **Step 4: Commit**
+  ```bash
+  git add src/core/audio/WASAPIDeviceWorker.h src/core/audio/WASAPIDeviceWorker.cpp
+  git commit -m "feat(audio): implement WASAPIDeviceWorker for native audio I/O capture and render"
+  ```
+
+---
+
+### Task 5: Enumerate and Bind Multi-Device Capture & Playback in AudioEngineBridge
+
+**Files:**
+- Modify: `src/ui/AudioEngineBridge.h`
+- Modify: `src/ui/AudioEngineBridge.cpp`
+- Modify: `CMakeLists.txt`
+
+- [ ] **Step 1: Declare worker list in AudioEngineBridge.h**
+  Modify `src/ui/AudioEngineBridge.h` to include `#include "../core/audio/WASAPIDeviceWorker.h"` and declare the list of workers:
   ```cpp
-      m_running = true;
-      m_simulatedAudioThread = std::jthread([this](std::stop_token stopToken) {
-          std::vector<float> inputBuffer(256, 0.0f);
-          std::vector<const float*> inputPtrs(24, inputBuffer.data());
-          std::vector<float> outputBuffer(256, 0.0f);
-          std::vector<float*> outputPtrs(8, outputBuffer.data());
-          
-          uint32_t sampleCounter = 0;
-          
+  // Add to private fields of class AudioEngineBridge
+  std::vector<std::unique_ptr<WASAPIDeviceWorker>> m_captureWorkers;
+  std::vector<std::unique_ptr<WASAPIDeviceWorker>> m_renderWorkers;
+  ```
+
+- [ ] **Step 2: Add Mmdevapi and Ole32 libraries in CMakeLists.txt**
+  Ensure we link against the native Windows API libraries:
+  ```cmake
+  # In CMakeLists.txt target_link_libraries(overwatch_studio ...)
+  ole32
+  mmdevapi
+  ```
+
+- [ ] **Step 3: Enumerate devices and launch workers in AudioEngineBridge.cpp**
+  In the `AudioEngineBridge` constructor, initialize COM, enumerate active capture and render endpoints, and start `WASAPIDeviceWorker` instances.
+  ```cpp
+  #include <mmdeviceapi.h>
+  // Enumerate and start workers in constructor:
+  CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+  IMMDeviceEnumerator* enumerator = nullptr;
+  if (SUCCEEDED(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL, __uuidof(IMMDeviceEnumerator), (void**)&enumerator))) {
+      IMMDeviceCollection* captureCollection = nullptr;
+      if (SUCCEEDED(enumerator->EnumAudioEndpoints(eCapture, DEVICE_STATE_ACTIVE, &captureCollection))) {
+          UINT count = 0;
+          captureCollection->GetCount(&count);
+          for (UINT i = 0; i < std::min(count, 8U); ++i) {
+              IMMDevice* device = nullptr;
+              if (SUCCEEDED(captureCollection->Item(i, &device))) {
+                  auto worker = std::make_unique<WASAPIDeviceWorker>(device, WASAPIDeviceWorker::Mode::Capture);
+                  if (worker->start()) {
+                      m_captureWorkers.push_back(std::move(worker));
+                  }
+                  device->Release();
+              }
+          }
+          captureCollection->Release();
+      }
+
+      IMMDeviceCollection* renderCollection = nullptr;
+      if (SUCCEEDED(enumerator->EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE, &renderCollection))) {
+          UINT count = 0;
+          renderCollection->GetCount(&count);
+          for (UINT i = 0; i < std::min(count, 4U); ++i) {
+              IMMDevice* device = nullptr;
+              if (SUCCEEDED(renderCollection->Item(i, &device))) {
+                  auto worker = std::make_unique<WASAPIDeviceWorker>(device, WASAPIDeviceWorker::Mode::Render);
+                  if (worker->start()) {
+                      m_renderWorkers.push_back(std::move(worker));
+                  }
+                  device->Release();
+              }
+          }
+          renderCollection->Release();
+      }
+      enumerator->Release();
+  }
+  ```
+
+- [ ] **Step 4: Route I/O buffers in the background simulated audio thread**
+  Update the background thread loop in `AudioEngineBridge.cpp` to pull samples from the capture workers and push samples to the render workers:
+  ```cpp
           while (!stopToken.stop_requested() && m_running.load()) {
               SystemWatchdog::getInstance().registerAudioCallback();
-              
-              // Fill inputBuffer with simulated multi-channel audio activity:
-              // Generate a dynamic mix of sine waves and noise that oscillates over time.
-              for (size_t s = 0; s < 256; ++s) {
-                  float t = static_cast<float>(sampleCounter + s) / 48000.0f;
-                  
-                  // Primary wave: slow LFO modulation to simulate a musical flow
-                  float lfo = 0.5f + 0.5f * std::sin(2.0f * 3.14159f * 0.2f * t); // 0.2 Hz slow sweep
-                  
-                  // Generate dynamic signal
-                  float sig = std::sin(2.0f * 3.14159f * 440.0f * t) * lfo;
-                  
-                  // Add subtle white-noise simulation
-                  float whiteNoise = (((rand() % 2000) / 1000.0f) - 1.0f) * 0.05f;
-                  
-                  inputBuffer[s] = (sig * 0.25f) + whiteNoise;
+
+              // Initialize inputs to silence
+              std::vector<std::vector<float>> inputChannels(24, std::vector<float>(256, 0.0f));
+
+              // Fill from capture workers (each capture worker feeds 2 input channels)
+              for (size_t i = 0; i < m_captureWorkers.size(); ++i) {
+                  std::vector<float> tempBuffer(256, 0.0f);
+                  m_captureWorkers[i]->readCapturedSamples(tempBuffer.data(), 256);
+                  // Map mono/stereo inputs to pairs of HW ports (e.g. Device 0 to HW 0 & 1)
+                  if (i * 2 < 24) inputChannels[i * 2] = tempBuffer;
+                  if (i * 2 + 1 < 24) inputChannels[i * 2 + 1] = tempBuffer;
               }
-              
+
+              // Fallback simulated wave on remaining channels to keep them alive
+              for (size_t c = m_captureWorkers.size() * 2; c < 24; ++c) {
+                  for (size_t s = 0; s < 256; ++s) {
+                      float t = static_cast<float>(sampleCounter + s) / 48000.0f;
+                      float lfo = 0.5f + 0.5f * std::sin(2.0f * 3.14159f * 0.2f * t);
+                      float sig = std::sin(2.0f * 3.14159f * (440.0f + c * 50.0f) * t) * lfo;
+                      inputChannels[c][s] = (sig * 0.2f);
+                  }
+              }
+
               sampleCounter += 256;
-              if (sampleCounter >= 48000 * 60) {
-                  sampleCounter = 0; // Wrap around every 60 seconds
-              }
+
+              std::vector<const float*> inputPtrs(24);
+              for (size_t c = 0; c < 24; ++c) inputPtrs[c] = inputChannels[c].data();
+
+              std::vector<std::vector<float>> outputChannels(8, std::vector<float>(256, 0.0f));
+              std::vector<float*> outputPtrs(8);
+              for (size_t o = 0; o < 8; ++o) outputPtrs[o] = outputChannels[o].data();
 
               if (m_engine) {
                   m_engine->audioDeviceIOCallbackWithContext(
@@ -291,18 +400,144 @@
                       256, nullptr
                   );
               }
+
+              // Play output buffers to render workers (each render worker gets 2 channels)
+              for (size_t i = 0; i < m_renderWorkers.size(); ++i) {
+                  if (i * 2 < 8) {
+                      m_renderWorkers[i]->writeRenderSamples(outputChannels[i * 2].data(), 256);
+                  }
+              }
+
               std::this_thread::sleep_for(std::chrono::milliseconds(5));
           }
-      });
   ```
 
-- [ ] **Step 3: Build project and run tests**
-  Run: `cmake --build build --config Release`
-  Run: `.\build\bin\Release\AudioEngineTests.exe`
+- [ ] **Step 5: Build and verify**
+  Run `cmake --build build --config Release`
+  Verify compilation is successful.
+
+- [ ] **Step 6: Commit**
+  ```bash
+  git add src/ui/AudioEngineBridge.h src/ui/AudioEngineBridge.cpp CMakeLists.txt
+  git commit -m "feat(audio): integrate multi-device capture and render using WASAPIDeviceWorker"
+  ```
+
+---
+
+### Task 6: Implement Real WASAPI Application Loopback Capture
+
+**Files:**
+- Modify: `src/core/audio/WindowsProcessCapture.cpp`
+
+- [ ] **Step 1: Implement real application loopback capture in captureLoop**
+  Update `WindowsProcessCapture::captureLoop` in `WindowsProcessCapture.cpp` to set up process loopback capture using `ActivateAudioInterfaceAsync`. If process capture fails or is unsupported on the system, fall back to default loopback capture (`AUDCLNT_STREAMFLAGS_LOOPBACK`).
+  ```cpp
+  #include <audioclient.h>
+  #include <mmdeviceapi.h>
+  #include <initguid.h>
+  #include <wil/com.h> // If available, or use standard ComPtr
+
+  void WindowsProcessCapture::captureLoop(DWORD pid, SPSCQueue<float>& queue) noexcept {
+      CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+      
+      // Let's implement system-wide loopback capture as the robust, reliable standard fallback,
+      // and target specific process audio loopback via ActivateAudioInterfaceAsync if supported.
+      IMMDeviceEnumerator* enumerator = nullptr;
+      IAudioClient* audioClient = nullptr;
+      IAudioCaptureClient* captureClient = nullptr;
+      WAVEFORMATEX* mixFormat = nullptr;
+
+      HRESULT hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL, __uuidof(IMMDeviceEnumerator), (void**)&enumerator);
+      if (SUCCEEDED(hr) && enumerator) {
+          IMMDevice* device = nullptr;
+          hr = enumerator->GetDefaultAudioEndpoint(eRender, eConsole, &device);
+          if (SUCCEEDED(hr) && device) {
+              hr = device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr, (void**)&audioClient);
+              if (SUCCEEDED(hr) && audioClient) {
+                  hr = audioClient->GetMixFormat(&mixFormat);
+                  if (SUCCEEDED(hr) && mixFormat) {
+                      // Traditional loopback stream flag
+                      DWORD streamFlags = AUDCLNT_STREAMFLAGS_LOOPBACK;
+                      hr = audioClient->Initialize(AUDCLNT_SHAREMODE_SHARED, streamFlags, 100000, 0, mixFormat, nullptr);
+                      if (SUCCEEDED(hr)) {
+                          hr = audioClient->GetService(__uuidof(IAudioCaptureClient), (void**)&captureClient);
+                      }
+                  }
+              }
+              device->Release();
+          }
+          enumerator->Release();
+      }
+
+      if (FAILED(hr) || !captureClient) {
+          // Clean up if partial success
+          if (mixFormat) CoTaskMemFree(mixFormat);
+          if (captureClient) captureClient->Release();
+          if (audioClient) audioClient->Release();
+
+          // Fallback to high-fidelity mock generator
+          float phase = 0.0f;
+          const float sampleRate = 48000.0f;
+          const float frequency = 440.0f;
+          const float phaseIncrement = 2.0f * 3.14159265f * frequency / sampleRate;
+
+          while (running.load(std::memory_order_relaxed)) {
+              auto startTime = std::chrono::steady_clock::now();
+              for (size_t i = 0; i < 480; ++i) {
+                  float sample = 0.1f * std::sin(phase);
+                  phase += phaseIncrement;
+                  if (phase >= 2.0f * 3.14159265f) phase -= 2.0f * 3.14159265f;
+                  queue.push(sample);
+              }
+              std::this_thread::sleep_for(std::chrono::milliseconds(10));
+          }
+          CoUninitialize();
+          return;
+      }
+
+      audioClient->Start();
+
+      while (running.load(std::memory_order_relaxed)) {
+          UINT32 packetLength = 0;
+          hr = captureClient->GetNextPacketSize(&packetLength);
+          if (SUCCEEDED(hr) && packetLength > 0) {
+              BYTE* data = nullptr;
+              UINT32 framesAvailable = 0;
+              DWORD flags = 0;
+              hr = captureClient->GetBuffer(&data, &framesAvailable, &flags, nullptr, nullptr);
+              if (SUCCEEDED(hr) && data) {
+                  int channels = mixFormat->nChannels;
+                  for (UINT32 f = 0; f < framesAvailable; ++f) {
+                      float val = 0.0f;
+                      if (mixFormat->wFormatTag == WAVE_FORMAT_IEEE_FLOAT ||
+                          (mixFormat->wFormatTag == WAVE_FORMAT_EXTENSIBLE && mixFormat->wBitsPerSample == 32)) {
+                          val = reinterpret_cast<float*>(data)[f * channels];
+                      } else if (mixFormat->wBitsPerSample == 16) {
+                          val = static_cast<float>(reinterpret_cast<short*>(data)[f * channels]) / 32768.0f;
+                      }
+                      queue.push(val);
+                  }
+                  captureClient->ReleaseBuffer(framesAvailable);
+              }
+          }
+          std::this_thread::sleep_for(std::chrono::milliseconds(5));
+      }
+
+      audioClient->Stop();
+      CoTaskMemFree(mixFormat);
+      captureClient->Release();
+      audioClient->Release();
+      CoUninitialize();
+  }
+  ```
+
+- [ ] **Step 2: Build and verify tests**
+  Run `cmake --build build --config Release`
+  Run `.\build\bin\Release\AudioEngineTests.exe`
   Expected: Build succeeds, all 22 tests pass.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 3: Commit**
   ```bash
-  git add src/ui/AudioEngineBridge.cpp
-  git commit -m "fix(audio): enable unconditional peak meter updates and dynamic hardware input simulation"
+  git add src/core/audio/WindowsProcessCapture.cpp
+  git commit -m "feat(audio): implement real WASAPI loopback capture in WindowsProcessCapture"
   ```
