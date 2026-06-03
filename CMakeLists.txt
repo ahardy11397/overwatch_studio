@@ -104,6 +104,8 @@ target_link_libraries(AudioEngineTests PRIVATE
     SQLite3::SQLite3
     libzip::zip
     simdjson::simdjson
+    ole32
+    mmdevapi
 )
 add_test(NAME AudioEngineTests COMMAND AudioEngineTests)
 
@@ -136,6 +138,8 @@ target_link_libraries(overwatch_studio PRIVATE
     SQLite3::SQLite3
     libzip::zip
     simdjson::simdjson
+    ole32
+    mmdevapi
 )
 
 set_target_properties(overwatch_studio PROPERTIES WIN32_EXECUTABLE ON)

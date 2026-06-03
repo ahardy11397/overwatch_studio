@@ -13,7 +13,9 @@
 #include "../core/control/SPSCQueue.h"
 #include "../core/audio/WindowsProcessCapture.h"
 #include "../core/audio/AudioRecorderManager.h"
+#include "../core/audio/WASAPIDeviceWorker.h"
 #include <memory>
+#include <vector>
 
 struct InputPatchUI {
     int channelIdx{0};
@@ -464,6 +466,8 @@ private:
     std::unique_ptr<AudioEngineCore> m_engine;
     std::unique_ptr<AudioRecorderManager> m_recorderManager;
     std::array<std::unique_ptr<WindowsProcessCapture>, 32> m_processCaptures;
+    std::vector<std::unique_ptr<WASAPIDeviceWorker>> m_captureWorkers;
+    std::vector<std::unique_ptr<WASAPIDeviceWorker>> m_renderWorkers;
     bool m_recordArmed = false;
     bool m_recordingActive = false;
 

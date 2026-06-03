@@ -16,6 +16,65 @@
 AudioEngineBridge::AudioEngineBridge(QObject* parent) 
     : QObject(parent), dspToUiQueue(1024) {
     
+    // Initialize COM
+    CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+
+    // Enumerate active capture and render devices
+    {
+        IMMDeviceEnumerator* enumerator = nullptr;
+        HRESULT hr = CoCreateInstance(
+            __uuidof(MMDeviceEnumerator),
+            nullptr,
+            CLSCTX_ALL,
+            __uuidof(IMMDeviceEnumerator),
+            (void**)&enumerator
+        );
+
+        if (SUCCEEDED(hr) && enumerator) {
+            // Enumerate Capture endpoints
+            IMMDeviceCollection* captureCollection = nullptr;
+            hr = enumerator->EnumAudioEndpoints(eCapture, DEVICE_STATE_ACTIVE, &captureCollection);
+            if (SUCCEEDED(hr) && captureCollection) {
+                UINT count = 0;
+                captureCollection->GetCount(&count);
+                UINT maxCapture = (count < 8) ? count : 8;
+                for (UINT i = 0; i < maxCapture; ++i) {
+                    IMMDevice* device = nullptr;
+                    if (SUCCEEDED(captureCollection->Item(i, &device)) && device) {
+                        auto worker = std::make_unique<WASAPIDeviceWorker>(device, WASAPIDeviceWorker::Mode::Capture);
+                        if (worker->start()) {
+                            m_captureWorkers.push_back(std::move(worker));
+                        }
+                        device->Release();
+                    }
+                }
+                captureCollection->Release();
+            }
+
+            // Enumerate Render endpoints
+            IMMDeviceCollection* renderCollection = nullptr;
+            hr = enumerator->EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE, &renderCollection);
+            if (SUCCEEDED(hr) && renderCollection) {
+                UINT count = 0;
+                renderCollection->GetCount(&count);
+                UINT maxRender = (count < 4) ? count : 4;
+                for (UINT i = 0; i < maxRender; ++i) {
+                    IMMDevice* device = nullptr;
+                    if (SUCCEEDED(renderCollection->Item(i, &device)) && device) {
+                        auto worker = std::make_unique<WASAPIDeviceWorker>(device, WASAPIDeviceWorker::Mode::Render);
+                        if (worker->start()) {
+                            m_renderWorkers.push_back(std::move(worker));
+                        }
+                        device->Release();
+                    }
+                }
+                renderCollection->Release();
+            }
+
+            enumerator->Release();
+        }
+    }
+    
     m_recorderManager = std::make_unique<AudioRecorderManager>();
     m_recorderManager->initialize(24, "recording_session_" + QDateTime::currentDateTime().toString("yyyy-MM-dd_hhmmss").toStdString());
     m_engine = std::make_unique<AudioEngineCore>();
@@ -23,19 +82,40 @@ AudioEngineBridge::AudioEngineBridge(QObject* parent)
 
     m_running = true;
     m_simulatedAudioThread = std::jthread([this](std::stop_token stopToken) {
-        std::vector<float> inputBuffer(256, 0.1f);
-        std::vector<float> outputBuffer(256, 0.0f);
-        std::vector<const float*> inputPtrs(24, inputBuffer.data());
-        std::vector<float*> outputPtrs(8, outputBuffer.data());
+        std::vector<float> inputBuffers(24 * 256, 0.0f);
+        std::vector<float> outputBuffers(8 * 256, 0.0f);
+        std::vector<const float*> inputPtrs(24);
+        for (size_t ch = 0; ch < 24; ++ch) {
+            inputPtrs[ch] = &inputBuffers[ch * 256];
+        }
+        std::vector<float*> outputPtrs(8);
+        for (size_t ch = 0; ch < 8; ++ch) {
+            outputPtrs[ch] = &outputBuffers[ch * 256];
+        }
         size_t sampleCounter = 0;
         while (!stopToken.stop_requested() && m_running.load()) {
-            for (size_t s = 0; s < 256; ++s) {
-                float t = static_cast<float>(sampleCounter + s) / 48000.0f;
-                float lfo = 0.5f + 0.5f * std::sin(2.0f * 3.14159f * 0.2f * t);
-                float sig = std::sin(2.0f * 3.14159f * 440.0f * t) * lfo;
-                float whiteNoise = (((rand() % 2000) / 1000.0f) - 1.0f) * 0.05f;
-                inputBuffer[s] = (sig * 0.25f) + whiteNoise;
+            size_t numCaptureDevices = m_captureWorkers.size();
+            for (size_t d = 0; d < numCaptureDevices && d < 8; ++d) {
+                float* ch0Buf = &inputBuffers[(2 * d) * 256];
+                float* ch1Buf = &inputBuffers[(2 * d + 1) * 256];
+                
+                m_captureWorkers[d]->readCapturedSamples(ch0Buf, 256);
+                std::copy(ch0Buf, ch0Buf + 256, ch1Buf);
             }
+
+            size_t firstRemainingChannel = 2 * numCaptureDevices;
+            for (size_t ch = firstRemainingChannel; ch < 24; ++ch) {
+                float* chBuf = &inputBuffers[ch * 256];
+                for (size_t s = 0; s < 256; ++s) {
+                    float t = static_cast<float>(sampleCounter + s) / 48000.0f;
+                    float lfo = 0.5f + 0.5f * std::sin(2.0f * 3.14159f * 0.2f * t);
+                    float freq = 440.0f + ch * 20.0f;
+                    float sig = std::sin(2.0f * 3.14159f * freq * t) * lfo;
+                    float whiteNoise = (((rand() % 2000) / 1000.0f) - 1.0f) * 0.05f;
+                    chBuf[s] = (sig * 0.25f) + whiteNoise;
+                }
+            }
+
             sampleCounter += 256;
             if (sampleCounter >= 48000 * 60) {
                 sampleCounter = 0;
@@ -48,6 +128,18 @@ AudioEngineBridge::AudioEngineBridge(QObject* parent)
                     256, nullptr
                 );
             }
+
+            size_t numRenderDevices = m_renderWorkers.size();
+            for (size_t r = 0; r < numRenderDevices && r < 4; ++r) {
+                const float* ch0Buf = &outputBuffers[(2 * r) * 256];
+                const float* ch1Buf = &outputBuffers[(2 * r + 1) * 256];
+                std::vector<float> mixBuffer(256);
+                for (size_t s = 0; s < 256; ++s) {
+                    mixBuffer[s] = (ch0Buf[s] + ch1Buf[s]) * 0.5f;
+                }
+                m_renderWorkers[r]->writeRenderSamples(mixBuffer.data(), 256);
+            }
+
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
         }
     });
@@ -210,6 +302,10 @@ AudioEngineBridge::~AudioEngineBridge() {
         m_simulatedAudioThread.join();
     }
 
+    // Stop and clear workers
+    m_captureWorkers.clear();
+    m_renderWorkers.clear();
+
     // Explicitly stop all application captures to stop background threads 
     // BEFORE the engine and its queues are destroyed.
     for (int i = 0; i < 32; ++i) {
@@ -220,6 +316,8 @@ AudioEngineBridge::~AudioEngineBridge() {
     }
 
     ExternalControlSurfaceManager::getInstance().stop();
+
+    CoUninitialize();
 }
 
 void AudioEngineBridge::setFaderVolume(float vol) {
