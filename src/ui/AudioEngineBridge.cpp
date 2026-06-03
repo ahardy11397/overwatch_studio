@@ -9,6 +9,7 @@
 #include "../core/control/ExternalControlSurfaceManager.h"
 #include "../core/control/RealtimeLogger.h"
 #include <cstdlib>
+#include <cmath>
 #include <QDebug>
 #include <QDateTime>
 
@@ -26,7 +27,19 @@ AudioEngineBridge::AudioEngineBridge(QObject* parent)
         std::vector<float> outputBuffer(256, 0.0f);
         std::vector<const float*> inputPtrs(24, inputBuffer.data());
         std::vector<float*> outputPtrs(8, outputBuffer.data());
+        size_t sampleCounter = 0;
         while (!stopToken.stop_requested() && m_running.load()) {
+            for (size_t s = 0; s < 256; ++s) {
+                float t = static_cast<float>(sampleCounter + s) / 48000.0f;
+                float lfo = 0.5f + 0.5f * std::sin(2.0f * 3.14159f * 0.2f * t);
+                float sig = std::sin(2.0f * 3.14159f * 440.0f * t) * lfo;
+                float whiteNoise = (((rand() % 2000) / 1000.0f) - 1.0f) * 0.05f;
+                inputBuffer[s] = (sig * 0.25f) + whiteNoise;
+            }
+            sampleCounter += 256;
+            if (sampleCounter >= 48000 * 60) {
+                sampleCounter = 0;
+            }
             SystemWatchdog::getInstance().registerAudioCallback();
             if (m_engine) {
                 m_engine->audioDeviceIOCallbackWithContext(
@@ -588,7 +601,6 @@ void AudioEngineBridge::notifyFaderChanged(int chIdx, double val) {
 void AudioEngineBridge::processAudioFeedback() {
     if (!m_engine) return;
 
-    bool changed = false;
     constexpr float decayFactor = 0.88f; // Peak meter smooth release decay factor
 
     for (int i = 0; i < 24; ++i) {
@@ -596,10 +608,7 @@ void AudioEngineBridge::processAudioFeedback() {
         double current = m_channelPeaks[i];
         double next = std::max(static_cast<double>(rawPeak), current * decayFactor);
         if (next < 0.001) next = 0.0;
-        if (!qFuzzyCompare(current, next)) {
-            m_channelPeaks[i] = next;
-            changed = true;
-        }
+        m_channelPeaks[i] = next;
     }
 
     for (int i = 0; i < 8; ++i) {
@@ -607,23 +616,15 @@ void AudioEngineBridge::processAudioFeedback() {
         double current = m_busPeaks[i];
         double next = std::max(static_cast<double>(rawPeak), current * decayFactor);
         if (next < 0.001) next = 0.0;
-        if (!qFuzzyCompare(current, next)) {
-            m_busPeaks[i] = next;
-            changed = true;
-        }
+        m_busPeaks[i] = next;
     }
 
     float rawMaster = m_engine->getMasterPeak().load(std::memory_order_relaxed);
     float nextMaster = std::max(rawMaster, m_masterPeak * decayFactor);
     if (nextMaster < 0.001f) nextMaster = 0.0f;
-    if (!qFuzzyCompare(m_masterPeak, nextMaster)) {
-        m_masterPeak = nextMaster;
-        changed = true;
-    }
+    m_masterPeak = nextMaster;
 
-    if (changed) {
-        emit peakMeterChanged();
-    }
+    emit peakMeterChanged();
 }
 
 void AudioEngineBridge::setActiveSampleRate(int rate) {
