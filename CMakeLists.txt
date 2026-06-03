@@ -93,6 +93,8 @@ add_executable(AudioEngineTests
     tests/DynamicAudioEngineTests.cpp
     tests/ControlEngineTests.cpp
     tests/VideoEngineTests.cpp
+    src/core/audio/WASAPIDeviceWorker.cpp
+    src/core/audio/WASAPIDeviceWorker.h
 )
 target_link_libraries(AudioEngineTests PRIVATE
     overwatch_engine
@@ -117,6 +119,8 @@ add_executable(overwatch_studio
     src/ui/ShowBuilderBridge.h
     src/core/audio/WindowsProcessCapture.cpp
     src/core/audio/WindowsProcessCapture.h
+    src/core/audio/WASAPIDeviceWorker.cpp
+    src/core/audio/WASAPIDeviceWorker.h
 )
 
 qt_add_qml_module(overwatch_studio

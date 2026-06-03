@@ -452,6 +452,30 @@ TEST(AudioEngineCoreTest, VerifyPeaksAndBusControls) {
     EXPECT_GT(engine->getMasterPeak().load(), 0.0f);
 }
 
+#include "WASAPIDeviceWorker.h"
+
+TEST(WASAPIDeviceWorkerTest, NullDeviceHandling) {
+    WASAPIDeviceWorker worker(nullptr, WASAPIDeviceWorker::Mode::Capture);
+    EXPECT_FALSE(worker.isRunning());
+    EXPECT_FALSE(worker.start());
+    EXPECT_EQ(worker.getDeviceName(), L"");
+    worker.stop();
+}
+
+TEST(WASAPIDeviceWorkerTest, BufferIOHandling) {
+    WASAPIDeviceWorker worker(nullptr, WASAPIDeviceWorker::Mode::Capture);
+    std::vector<float> input(128, 0.5f);
+    worker.writeRenderSamples(input.data(), input.size());
+
+    std::vector<float> output(128, 0.0f);
+    worker.readCapturedSamples(output.data(), output.size());
+
+    for (size_t i = 0; i < 128; ++i) {
+        EXPECT_FLOAT_EQ(output[i], 0.5f);
+    }
+}
+
+
 
 
 
