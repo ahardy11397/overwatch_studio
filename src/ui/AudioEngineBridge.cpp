@@ -1,5 +1,8 @@
 // Touch for Task 1: Summing Engine & C++ Device Selector
 #include "AudioEngineBridge.h"
+#include <windows.h>
+#include <timeapi.h>
+#pragma comment(lib, "winmm.lib")
 #include "../core/audio/AudioEngineCore.h"
 #include "../core/control/PanicSwitch.h"
 #include "../core/control/SystemWatchdog.h"
@@ -82,6 +85,9 @@ AudioEngineBridge::AudioEngineBridge(QObject* parent)
 
     m_running = true;
     m_simulatedAudioThread = std::jthread([this](std::stop_token stopToken) {
+        // Set Windows timer resolution to 1ms for high-precision sleep
+        timeBeginPeriod(1);
+
         std::vector<float> inputBuffers(24 * 256, 0.0f);
         std::vector<float> outputBuffers(8 * 256, 0.0f);
         std::vector<const float*> inputPtrs(24);
@@ -92,8 +98,38 @@ AudioEngineBridge::AudioEngineBridge(QObject* parent)
         for (size_t ch = 0; ch < 8; ++ch) {
             outputPtrs[ch] = &outputBuffers[ch * 256];
         }
+        
         size_t sampleCounter = 0;
+        auto nextFrameTime = std::chrono::steady_clock::now();
+        const auto frameDuration = std::chrono::microseconds(5333); // 256 samples @ 48kHz
+
         while (!stopToken.stop_requested() && m_running.load()) {
+            // 1. Thread pacing
+            if (!m_captureWorkers.empty()) {
+                // Active Capture: block until we have at least 256 samples captured
+                size_t buffered = m_captureWorkers[0]->getBufferedSampleCount();
+                if (buffered < 256) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                    continue;
+                }
+            } else {
+                // Silent/Mock Pacing: Sleep/Yield precisely for 5.333ms frame intervals
+                nextFrameTime += frameDuration;
+                auto now = std::chrono::steady_clock::now();
+                if (now < nextFrameTime) {
+                    auto sleepTime = std::chrono::duration_cast<std::chrono::milliseconds>(nextFrameTime - now);
+                    if (sleepTime.count() > 1) {
+                        std::this_thread::sleep_for(sleepTime - std::chrono::milliseconds(1));
+                    }
+                    while (std::chrono::steady_clock::now() < nextFrameTime) {
+                        std::this_thread::yield();
+                    }
+                } else if (now - nextFrameTime > std::chrono::milliseconds(100)) {
+                    nextFrameTime = now;
+                }
+            }
+
+            // 2. Read capture buffers
             size_t numCaptureDevices = m_captureWorkers.size();
             for (size_t d = 0; d < numCaptureDevices && d < 8; ++d) {
                 float* ch0Buf = &inputBuffers[(2 * d) * 256];
@@ -121,6 +157,7 @@ AudioEngineBridge::AudioEngineBridge(QObject* parent)
                 sampleCounter = 0;
             }
             SystemWatchdog::getInstance().registerAudioCallback();
+            
             if (m_engine) {
                 m_engine->audioDeviceIOCallbackWithContext(
                     inputPtrs.data(), 24,
@@ -129,6 +166,7 @@ AudioEngineBridge::AudioEngineBridge(QObject* parent)
                 );
             }
 
+            // 3. Write render buffers
             size_t numRenderDevices = m_renderWorkers.size();
             for (size_t r = 0; r < numRenderDevices && r < 4; ++r) {
                 const float* ch0Buf = &outputBuffers[(2 * r) * 256];
@@ -139,9 +177,9 @@ AudioEngineBridge::AudioEngineBridge(QObject* parent)
                 }
                 m_renderWorkers[r]->writeRenderSamples(mixBuffer.data(), 256);
             }
-
-            std::this_thread::sleep_for(std::chrono::milliseconds(5));
         }
+        
+        timeEndPeriod(1);
     });
 
     // Start the universal control surface server engines
