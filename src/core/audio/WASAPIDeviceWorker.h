@@ -26,6 +26,7 @@ public:
 
     bool isRunning() const noexcept { return m_running.load(std::memory_order_relaxed); }
     std::wstring getDeviceName() const noexcept { return m_deviceName; }
+    size_t getBufferedSampleCount() const noexcept;
 
 private:
     void runLoop() noexcept;
@@ -47,5 +48,5 @@ private:
     std::vector<float> m_ringBuffer;
     size_t m_ringWritePos = 0;
     size_t m_ringReadPos = 0;
-    std::mutex m_ringMutex;
+    mutable std::mutex m_ringMutex;
 };

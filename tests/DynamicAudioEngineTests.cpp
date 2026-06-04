@@ -475,6 +475,30 @@ TEST(WASAPIDeviceWorkerTest, BufferIOHandling) {
     }
 }
 
+TEST(WASAPIDeviceWorkerTest, VerifyCatchUpAndBufferLevels) {
+    // Create worker in Capture mode (using nullptr device for mock structure)
+    WASAPIDeviceWorker worker(nullptr, WASAPIDeviceWorker::Mode::Capture);
+    
+    // Initially empty
+    EXPECT_EQ(worker.getBufferedSampleCount(), 0);
+
+    // Simulate writing a massive backlog (e.g., 2000 samples)
+    std::vector<float> data(2000, 1.0f);
+    worker.writeRenderSamples(data.data(), data.size()); // Write to ring buffer
+    
+    // Since it's capture/render shared buffer, verify backlog level
+    EXPECT_EQ(worker.getBufferedSampleCount(), 2000);
+
+    // Reading a block of 256 samples should trigger catch-up
+    // The backlog (2000) exceeds the threshold (512), so it should discard down to 512
+    // and then read 256, leaving exactly 256 unread samples.
+    std::vector<float> dest(256, 0.0f);
+    worker.readCapturedSamples(dest.data(), dest.size());
+
+    EXPECT_EQ(worker.getBufferedSampleCount(), 256);
+}
+
+
 #include "WindowsProcessCapture.h"
 
 TEST(WindowsProcessCaptureTest, VerifyCaptureLifecycleAndQueuePush) {

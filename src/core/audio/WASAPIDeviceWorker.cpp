@@ -150,6 +150,17 @@ void WASAPIDeviceWorker::runLoop() noexcept {
                     hr = m_renderClient->GetBuffer(framesToWrite, &data);
                     if (SUCCEEDED(hr) && data) {
                         std::lock_guard<std::mutex> lock(m_ringMutex);
+                        
+                        size_t buffered = (m_ringWritePos >= m_ringReadPos) ? 
+                                          (m_ringWritePos - m_ringReadPos) : 
+                                          (m_ringBuffer.size() - m_ringReadPos + m_ringWritePos);
+                                          
+                        size_t maxAllowed = framesToWrite + 512;
+                        if (buffered > maxAllowed) {
+                            size_t targetSamples = framesToWrite + 256;
+                            m_ringReadPos = (m_ringWritePos + m_ringBuffer.size() - targetSamples) % m_ringBuffer.size();
+                        }
+
                         int channels = m_mixFormat->nChannels;
 
                         bool isFloat = (m_mixFormat->wFormatTag == WAVE_FORMAT_IEEE_FLOAT);
@@ -204,8 +215,24 @@ void WASAPIDeviceWorker::runLoop() noexcept {
     CoUninitialize();
 }
 
+size_t WASAPIDeviceWorker::getBufferedSampleCount() const noexcept {
+    std::lock_guard<std::mutex> lock(m_ringMutex);
+    return (m_ringWritePos >= m_ringReadPos) ? 
+           (m_ringWritePos - m_ringReadPos) : 
+           (m_ringBuffer.size() - m_ringReadPos + m_ringWritePos);
+}
+
 void WASAPIDeviceWorker::readCapturedSamples(float* destBuffer, size_t numSamples) noexcept {
     std::lock_guard<std::mutex> lock(m_ringMutex);
+    
+    size_t buffered = (m_ringWritePos >= m_ringReadPos) ? 
+                      (m_ringWritePos - m_ringReadPos) : 
+                      (m_ringBuffer.size() - m_ringReadPos + m_ringWritePos);
+                      
+    if (buffered > 512) {
+        m_ringReadPos = (m_ringWritePos + m_ringBuffer.size() - 512) % m_ringBuffer.size();
+    }
+
     for (size_t i = 0; i < numSamples; ++i) {
         if (m_ringReadPos != m_ringWritePos) {
             destBuffer[i] = m_ringBuffer[m_ringReadPos];
