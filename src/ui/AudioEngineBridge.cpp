@@ -3,6 +3,10 @@
 #include <windows.h>
 #include <tlhelp32.h>
 #include <timeapi.h>
+#include <audiopolicy.h>
+#include <mmdeviceapi.h>
+#include <unordered_set>
+#include <wrl/client.h>
 #pragma comment(lib, "winmm.lib")
 #include "../core/audio/AudioEngineCore.h"
 #include "../core/control/PanicSwitch.h"
@@ -975,11 +979,63 @@ void AudioEngineBridge::refreshProcessesAsync() {
     }
 
     m_processListThread = std::jthread([this](std::stop_token stopToken) {
+        HRESULT coInitHr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+        struct ComDeinitializer {
+            HRESULT hr;
+            ~ComDeinitializer() {
+                if (hr == S_OK || hr == S_FALSE) {
+                    CoUninitialize();
+                }
+            }
+        } comDeinit{ coInitHr };
+
         QVariantMap newMap;
         
         if (stopToken.stop_requested()) {
             m_updatingProcesses.store(false);
             return;
+        }
+
+        std::unordered_set<DWORD> activeAudioPids;
+        
+        Microsoft::WRL::ComPtr<IMMDeviceEnumerator> deviceEnumerator;
+        HRESULT hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL, __uuidof(IMMDeviceEnumerator), (void**)&deviceEnumerator);
+        if (SUCCEEDED(hr) && deviceEnumerator) {
+            Microsoft::WRL::ComPtr<IMMDevice> device;
+            hr = deviceEnumerator->GetDefaultAudioEndpoint(eRender, eConsole, &device);
+            if (SUCCEEDED(hr) && device) {
+                Microsoft::WRL::ComPtr<IAudioSessionManager2> sessionManager;
+                hr = device->Activate(__uuidof(IAudioSessionManager2), CLSCTX_ALL, nullptr, (void**)&sessionManager);
+                if (SUCCEEDED(hr) && sessionManager) {
+                    Microsoft::WRL::ComPtr<IAudioSessionEnumerator> sessionEnumerator;
+                    hr = sessionManager->GetSessionEnumerator(&sessionEnumerator);
+                    if (SUCCEEDED(hr) && sessionEnumerator) {
+                        int sessionCount = 0;
+                        hr = sessionEnumerator->GetCount(&sessionCount);
+                        if (SUCCEEDED(hr)) {
+                            for (int i = 0; i < sessionCount; ++i) {
+                                Microsoft::WRL::ComPtr<IAudioSessionControl> sessionControl;
+                                hr = sessionEnumerator->GetSession(i, &sessionControl);
+                                if (SUCCEEDED(hr) && sessionControl) {
+                                    Microsoft::WRL::ComPtr<IAudioSessionControl2> sessionControl2;
+                                    hr = sessionControl->QueryInterface(__uuidof(IAudioSessionControl2), (void**)&sessionControl2);
+                                    if (SUCCEEDED(hr) && sessionControl2) {
+                                        DWORD pid = 0;
+                                        hr = sessionControl2->GetProcessId(&pid);
+                                        if (SUCCEEDED(hr) && pid > 0) {
+                                            AudioSessionState state;
+                                            hr = sessionControl2->GetState(&state);
+                                            if (SUCCEEDED(hr) && state == AudioSessionStateActive) {
+                                                activeAudioPids.insert(pid);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
         
         HANDLE hProcessSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
@@ -1014,7 +1070,13 @@ void AudioEngineBridge::refreshProcessesAsync() {
                         continue;
                     }
                     
-                    QString displayName = QString("%1 (PID: %2)").arg(procName).arg(pid);
+                    bool isAudioActive = activeAudioPids.find(pid) != activeAudioPids.end();
+                    QString displayName;
+                    if (isAudioActive) {
+                        displayName = QString::fromUtf8("  \xF0\x9F\x94\x8A %1 (PID: %2)").arg(procName).arg(pid); // "  🔊 ProcessName (PID: 1234)"
+                    } else {
+                        displayName = QString("%1 (PID: %2)").arg(procName).arg(pid);
+                    }
                     newMap[displayName] = static_cast<int>(pid);
                 } while (Process32NextW(hProcessSnap, &pe32));
             }
