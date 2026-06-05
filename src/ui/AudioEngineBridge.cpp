@@ -343,6 +343,7 @@ AudioEngineBridge::~AudioEngineBridge() {
         m_simulatedAudioThread.join();
     }
     if (m_processListThread.joinable()) {
+        m_processListThread.request_stop();
         m_processListThread.join();
     }
 

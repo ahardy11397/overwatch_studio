@@ -8116,7 +8116,7 @@ Window {
                                                                         return i;
                                                                     }
                                                                 }
-                                                                return 0; // fallback
+                                                                return -1; // fallback when PID is no longer running
                                                             }
                                                             return patch.index;
                                                         }
