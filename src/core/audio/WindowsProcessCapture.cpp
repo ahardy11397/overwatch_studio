@@ -7,6 +7,7 @@
 #include <initguid.h>
 #include <chrono>
 #include <cmath>
+#include <cstring>
 
 #ifndef SPEAKER_FRONT_LEFT
 #define SPEAKER_FRONT_LEFT            0x1
@@ -90,6 +91,7 @@ void WindowsProcessCapture::captureLoop(DWORD pid, SPSCQueue<float>& queue) noex
 
     Microsoft::WRL::ComPtr<IAudioClient> audioClient;
     Microsoft::WRL::ComPtr<IAudioCaptureClient> captureClient;
+    WAVEFORMATEXTENSIBLE wfx = {};
     WAVEFORMATEX* mixFormat = nullptr;
     bool formatAllocated = false;
     bool initialized = false;
@@ -133,7 +135,7 @@ void WindowsProcessCapture::captureLoop(DWORD pid, SPSCQueue<float>& queue) noex
                 if (SUCCEEDED(hr) && audioClient) {
                     // For process loopback, GetMixFormat typically returns E_NOTIMPL.
                     // We define a standard WAVEFORMATEXTENSIBLE stereo 32-bit float 48kHz format.
-                    WAVEFORMATEXTENSIBLE wfx = {};
+                    wfx = {};
                     wfx.Format.cbSize = sizeof(WAVEFORMATEXTENSIBLE) - sizeof(WAVEFORMATEX);
                     wfx.Format.wFormatTag = WAVE_FORMAT_EXTENSIBLE;
                     wfx.Format.nChannels = 2;
@@ -148,7 +150,7 @@ void WindowsProcessCapture::captureLoop(DWORD pid, SPSCQueue<float>& queue) noex
 
                     hr = audioClient->Initialize(
                         AUDCLNT_SHAREMODE_SHARED,
-                        AUDCLNT_STREAMFLAGS_LOOPBACK,
+                        0,
                         1000000, // 100ms
                         0,
                         mixFormat,
@@ -323,5 +325,7 @@ void WindowsProcessCapture::captureLoop(DWORD pid, SPSCQueue<float>& queue) noex
         }
     }
 
+    audioClient.Reset();
+    captureClient.Reset();
     CoUninitialize();
 }
