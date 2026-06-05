@@ -295,13 +295,40 @@ public:
                     }
                 }
             } else if (patch.type == AudioSourceType::AppCapture) {
-                // Pull from dedicated process capture queue
                 auto* queue = appCaptureQueues[c].get();
-                for (size_t s = 0; s < samples; ++s) {
-                    if (auto sampleOpt = queue->pop()) {
-                        dest[s] = *sampleOpt;
-                    } else {
-                        dest[s] = 0.0f;
+                size_t writeIdx = 0;
+                size_t poppedCount = 0;
+                size_t queueSize = queue->size_approx();
+                
+                if (queueSize > samples * 2) {
+                    // Backlog detected: drain queue to catch up and minimize latency
+                    const size_t maxPops = samples * 8;
+                    while (poppedCount < maxPops) {
+                        if (auto sampleOpt = queue->pop()) {
+                            dest[writeIdx] = *sampleOpt;
+                            writeIdx++;
+                            if (writeIdx >= samples) {
+                                writeIdx = 0;
+                            }
+                            poppedCount++;
+                        } else {
+                            break;
+                        }
+                    }
+                    if (poppedCount >= samples) {
+                        if (writeIdx > 0) {
+                            std::rotate(dest, dest + writeIdx, dest + samples);
+                        }
+                    }
+                } else {
+                    // Normal operation: pop exactly 'samples' (no discard, no clicks)
+                    while (poppedCount < samples) {
+                        if (auto sampleOpt = queue->pop()) {
+                            dest[poppedCount] = *sampleOpt;
+                            poppedCount++;
+                        } else {
+                            break;
+                        }
                     }
                 }
             } else {
@@ -401,7 +428,14 @@ public:
         }
 
         // 7. Append to recording SPSC buffers if armed
-        if (m_recordingArmed.load() && m_recorder != nullptr) {
+        bool recordingArmed = m_recordingArmed.load(std::memory_order_relaxed);
+        if (recordingArmed && m_recorder != nullptr) {
+            if (!m_wasRecordingArmed) {
+                for (auto& rb : m_recordBlocks) {
+                    rb.count = 0;
+                }
+                m_wasRecordingArmed = true;
+            }
             for (size_t c = 0; c < activeInputs; ++c) {
                 auto& rb = m_recordBlocks[c];
                 for (size_t s = 0; s < samples; ++s) {
@@ -412,11 +446,14 @@ public:
                     }
                 }
             }
+        } else {
+            m_wasRecordingArmed = false;
         }
     }
 
     AudioChannelStrip& getChannelStrip(size_t index) noexcept {
-        return *faderStrips[index % faderStrips.size()];
+        auto* strip = faderStrips[index % faderStrips.size()];
+        return strip ? *strip : channelPool[0];
     }
 
     SparseRoutingMatrix& getRoutingMatrix() noexcept {
@@ -441,7 +478,7 @@ public:
     void setRecordingArmed(bool armed) noexcept { m_recordingArmed.store(armed); }
 
     void configureEngine(size_t numInputs, size_t numBuses, size_t numAuxes, size_t numDCAs) noexcept {
-        activeInputsCount.store(std::min(numInputs, MaxInputs));
+        activeInputsCount.store(std::min(numInputs, InputChannelsCount));
         activeBusesCount.store(std::min(numBuses, MaxBuses));
         activeAuxesCount.store(std::min(numAuxes, MaxAuxes));
         activeDCAsCount.store(std::min(numDCAs, MaxDCAs));
@@ -514,6 +551,7 @@ private:
 
     AudioRecorderManager* m_recorder = nullptr;
     std::atomic<bool> m_recordingArmed{false};
+    bool m_wasRecordingArmed = false;
     std::array<AudioRecordBlock, InputChannelsCount> m_recordBlocks{};
 };
 
