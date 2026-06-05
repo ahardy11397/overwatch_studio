@@ -8353,7 +8353,7 @@ Window {
                                     spacing: 8
 
                                     Text {
-                                        text: "PHYSICAL OUTPUT CHANNEL PATCHING"
+                                        text: "SUMMING BUS OUTPUT PATCHING"
                                         color: "#8a8d98"
                                         font.pixelSize: 9
                                         font.bold: true
@@ -8364,7 +8364,8 @@ Window {
                                         delegate: RowLayout {
                                             spacing: 12
                                             Layout.fillWidth: true
-                                            property int portIdx: index
+                                            property int busIdx: index
+                                            property var busNames: ["Master L", "Master R", "Aux 1", "Aux 2", "Aux 3", "Aux 4", "Rec L", "Rec R"]
 
                                             // Label
                                             Rectangle {
@@ -8374,7 +8375,7 @@ Window {
                                                 border.color: "#252b36"
                                                 Text {
                                                     anchors.centerIn: parent
-                                                    text: "ASIO Output " + (portIdx + 1)
+                                                    text: busNames[busIdx]
                                                     color: "#00BDD6"
                                                     font.pixelSize: 9
                                                     font.bold: true
@@ -8386,35 +8387,22 @@ Window {
                                                 id: patchedBusCombo
                                                 implicitHeight: 24
                                                 Layout.preferredWidth: 200
-                                                model: ["Unpatched", "Master L", "Master R", "Aux 1", "Aux 2", "Aux 3", "Aux 4", "Rec L", "Rec R"]
+                                                model: ["Unpatched", "ASIO Output 1", "ASIO Output 2", "ASIO Output 3", "ASIO Output 4", "ASIO Output 5", "ASIO Output 6", "ASIO Output 7", "ASIO Output 8"]
                                                 
                                                 currentIndex: {
-                                                    if (audioCore.outputPatches) {
-                                                        for (var i = 0; i < audioCore.outputPatches.length; ++i) {
-                                                            var patch = audioCore.outputPatches[i];
-                                                            if (patch && patch.active && patch.hwOutputIdx === portIdx) {
-                                                                return patch.busIdx + 1;
-                                                            }
+                                                    if (audioCore.outputPatches && audioCore.outputPatches[busIdx] !== undefined) {
+                                                        var patch = audioCore.outputPatches[busIdx];
+                                                        if (patch && patch.active) {
+                                                            return patch.hwOutputIdx + 1;
                                                         }
                                                     }
                                                     return 0;
                                                 }
 
                                                 onActivated: {
-                                                    if (index === 0) {
-                                                        if (audioCore.outputPatches) {
-                                                            for (var i = 0; i < audioCore.outputPatches.length; ++i) {
-                                                                var patch = audioCore.outputPatches[i];
-                                                                if (patch && patch.active && patch.hwOutputIdx === portIdx) {
-                                                                    audioCore.setOutputPatch(patch.busIdx, portIdx, false);
-                                                                    break;
-                                                                }
-                                                            }
-                                                        }
-                                                    } else {
-                                                        var busIdx = index - 1;
-                                                        audioCore.setOutputPatch(busIdx, portIdx, true);
-                                                    }
+                                                    var active = index > 0;
+                                                    var hwOutputIdx = index - 1;
+                                                    audioCore.setOutputPatch(busIdx, hwOutputIdx, active);
                                                 }
                                             }
 
