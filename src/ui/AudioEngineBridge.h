@@ -463,6 +463,7 @@ private:
     // Simulated real-time background audio thread
     std::atomic<bool> m_running{true};
     std::jthread m_simulatedAudioThread;
+    std::jthread m_processListThread;
 
     std::unique_ptr<AudioEngineCore> m_engine;
     std::unique_ptr<AudioRecorderManager> m_recorderManager;

@@ -342,6 +342,9 @@ AudioEngineBridge::~AudioEngineBridge() {
     if (m_simulatedAudioThread.joinable()) {
         m_simulatedAudioThread.join();
     }
+    if (m_processListThread.joinable()) {
+        m_processListThread.join();
+    }
 
     // Stop and clear workers
     m_captureWorkers.clear();
@@ -931,8 +934,17 @@ void AudioEngineBridge::refreshProcessesAsync() {
         return;
     }
 
-    std::thread([this]() {
+    if (m_processListThread.joinable()) {
+        m_processListThread.join();
+    }
+
+    m_processListThread = std::jthread([this](std::stop_token stopToken) {
         QVariantMap newMap;
+        
+        if (stopToken.stop_requested()) {
+            m_updatingProcesses.store(false);
+            return;
+        }
         
         HANDLE hProcessSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
         if (hProcessSnap != INVALID_HANDLE_VALUE) {
@@ -947,6 +959,11 @@ void AudioEngineBridge::refreshProcessesAsync() {
                     "shellexperiencehost.exe", "searchhost.exe", "runtimebroker.exe"
                 };
                 do {
+                    if (stopToken.stop_requested()) {
+                        CloseHandle(hProcessSnap);
+                        m_updatingProcesses.store(false);
+                        return;
+                    }
                     DWORD pid = pe32.th32ProcessID;
                     if (pid <= 4) {
                         continue;
@@ -968,6 +985,11 @@ void AudioEngineBridge::refreshProcessesAsync() {
             CloseHandle(hProcessSnap);
         }
         
+        if (stopToken.stop_requested()) {
+            m_updatingProcesses.store(false);
+            return;
+        }
+        
         if (newMap.isEmpty()) {
             newMap["Discord.exe (PID: 1420)"] = 1420;
             newMap["chrome.exe (PID: 9812)"] = 9812;
@@ -979,7 +1001,7 @@ void AudioEngineBridge::refreshProcessesAsync() {
             m_updatingProcesses.store(false);
             emit processesChanged();
         });
-    }).detach();
+    });
 }
 
 void AudioEngineBridge::startApplicationCapture(int channelIdx, QString processName, int pid) {

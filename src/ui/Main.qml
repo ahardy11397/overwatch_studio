@@ -8066,7 +8066,7 @@ Window {
                                                         if (processes.length > 0) {
                                                             var procName = processes[0];
                                                             var pid = audioCore.availableProcesses[procName];
-                                                            audioCore.setInputPatch(channelIdx, 3, 0);
+                                                            audioCore.setInputPatch(channelIdx, 3, pid);
                                                             audioCore.startApplicationCapture(channelIdx, procName, pid);
                                                         } else {
                                                             audioCore.setInputPatch(channelIdx, 3, 0);
@@ -8108,7 +8108,17 @@ Window {
                                                     if (audioCore.inputPatches && audioCore.inputPatches[channelIdx] !== undefined) {
                                                         var backendType = audioCore.inputPatches[channelIdx].type;
                                                         if (backendType === type) {
-                                                            return audioCore.inputPatches[channelIdx].index;
+                                                            var patch = audioCore.inputPatches[channelIdx];
+                                                            if (type === 3) {
+                                                                var processes = Object.keys(audioCore.availableProcesses);
+                                                                for (var i = 0; i < processes.length; i++) {
+                                                                    if (audioCore.availableProcesses[processes[i]] === patch.index) {
+                                                                        return i;
+                                                                    }
+                                                                }
+                                                                return 0; // fallback
+                                                            }
+                                                            return patch.index;
                                                         }
                                                     }
                                                     return 0;
@@ -8123,7 +8133,7 @@ Window {
                                                         if (index >= 0 && index < processes.length) {
                                                             var procName = processes[index];
                                                             var pid = audioCore.availableProcesses[procName];
-                                                            audioCore.setInputPatch(channelIdx, 3, index);
+                                                            audioCore.setInputPatch(channelIdx, 3, pid);
                                                             audioCore.startApplicationCapture(channelIdx, procName, pid);
                                                         }
                                                     }
