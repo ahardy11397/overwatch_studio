@@ -6,6 +6,8 @@
 #include <audiopolicy.h>
 #include <mmdeviceapi.h>
 #include <unordered_set>
+#include <unordered_map>
+#include <vector>
 #include <wrl/client.h>
 #pragma comment(lib, "winmm.lib")
 #include "../core/audio/AudioEngineCore.h"
@@ -20,6 +22,41 @@
 #include <cmath>
 #include <QDebug>
 #include <QDateTime>
+
+namespace {
+    BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lParam) {
+        if (!IsWindowVisible(hwnd)) {
+            return TRUE;
+        }
+        
+        HWND shellWindow = GetShellWindow();
+        if (hwnd == shellWindow) {
+            return TRUE;
+        }
+        
+        int length = GetWindowTextLengthW(hwnd);
+        if (length > 0) {
+            std::vector<wchar_t> buffer(length + 1);
+            GetWindowTextW(hwnd, buffer.data(), length + 1);
+            QString title = QString::fromWCharArray(buffer.data()).trimmed();
+            
+            if (!title.isEmpty()) {
+                // Filter out common Windows internal shell window titles
+                if (title == "Program Manager" || title == "Settings" || title == "Start") {
+                    return TRUE;
+                }
+                
+                DWORD pid = 0;
+                GetWindowThreadProcessId(hwnd, &pid);
+                if (pid > 0) {
+                    auto* pMap = reinterpret_cast<std::unordered_map<DWORD, std::vector<QString>>*>(lParam);
+                    (*pMap)[pid].push_back(title);
+                }
+            }
+        }
+        return TRUE;
+    }
+}
 
 AudioEngineBridge::AudioEngineBridge(QObject* parent) 
     : QObject(parent), dspToUiQueue(1024) {
@@ -1038,6 +1075,9 @@ void AudioEngineBridge::refreshProcessesAsync() {
             }
         }
         
+        std::unordered_map<DWORD, std::vector<QString>> pidToWindowTitles;
+        EnumWindows(EnumWindowsProc, reinterpret_cast<LPARAM>(&pidToWindowTitles));
+        
         HANDLE hProcessSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
         if (hProcessSnap != INVALID_HANDLE_VALUE) {
             PROCESSENTRY32W pe32;
@@ -1071,13 +1111,26 @@ void AudioEngineBridge::refreshProcessesAsync() {
                     }
                     
                     bool isAudioActive = activeAudioPids.find(pid) != activeAudioPids.end();
-                    QString displayName;
-                    if (isAudioActive) {
-                        displayName = QString::fromUtf8("  \xF0\x9F\x94\x8A %1 (PID: %2)").arg(procName).arg(pid); // "  🔊 ProcessName (PID: 1234)"
+                    auto it = pidToWindowTitles.find(pid);
+                    if (it != pidToWindowTitles.end()) {
+                        for (const auto& title : it->second) {
+                            QString displayName;
+                            if (isAudioActive) {
+                                displayName = QString::fromUtf8("  \xF0\x9F\x94\x8A %1 - %2 (PID: %3)").arg(title).arg(procName).arg(pid);
+                            } else {
+                                displayName = QString("%1 - %2 (PID: %3)").arg(title).arg(procName).arg(pid);
+                            }
+                            newMap[displayName] = static_cast<int>(pid);
+                        }
                     } else {
-                        displayName = QString("%1 (PID: %2)").arg(procName).arg(pid);
+                        QString displayName;
+                        if (isAudioActive) {
+                            displayName = QString::fromUtf8("  \xF0\x9F\x94\x8A %1 (PID: %2)").arg(procName).arg(pid);
+                        } else {
+                            displayName = QString("%1 (PID: %2)").arg(procName).arg(pid);
+                        }
+                        newMap[displayName] = static_cast<int>(pid);
                     }
-                    newMap[displayName] = static_cast<int>(pid);
                 } while (Process32NextW(hProcessSnap, &pe32));
             }
             CloseHandle(hProcessSnap);
