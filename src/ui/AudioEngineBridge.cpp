@@ -332,6 +332,8 @@ AudioEngineBridge::AudioEngineBridge(QObject* parent)
             2
         });
     }
+
+    refreshProcessesAsync();
 }
 
 AudioEngineBridge::~AudioEngineBridge() {
@@ -763,11 +765,10 @@ void AudioEngineBridge::processAudioFeedback() {
 
     emit peakMeterChanged();
 
-    static int processListCounter = 0;
-    processListCounter++;
-    if (processListCounter >= 120) {
-        processListCounter = 0;
-        emit processesChanged();
+    m_processListCounter++;
+    if (m_processListCounter >= 120) {
+        m_processListCounter = 0;
+        refreshProcessesAsync();
     }
 }
 
@@ -922,49 +923,63 @@ bool AudioEngineBridge::pushCommand(const RoutingCommand& cmd) {
 }
 
 QVariantMap AudioEngineBridge::availableProcesses() const {
-    QVariantMap map;
-    
-    HANDLE hProcessSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    if (hProcessSnap != INVALID_HANDLE_VALUE) {
-        PROCESSENTRY32W pe32;
-        pe32.dwSize = sizeof(PROCESSENTRY32W);
+    return m_availableProcesses;
+}
+
+void AudioEngineBridge::refreshProcessesAsync() {
+    if (m_updatingProcesses.exchange(true)) {
+        return;
+    }
+
+    std::thread([this]() {
+        QVariantMap newMap;
         
-        if (Process32FirstW(hProcessSnap, &pe32)) {
-            static const QStringList systemExes = {
-                "svchost.exe", "services.exe", "lsass.exe", "csrss.exe", "smss.exe",
-                "wininit.exe", "winlogon.exe", "spoolsv.exe", "dwm.exe", "taskhostw.exe",
-                "conhost.exe", "dllhost.exe", "sihost.exe", "fontdrvhost.exe", "ctfmon.exe",
-                "shellexperiencehost.exe", "searchhost.exe", "runtimebroker.exe"
-            };
-            do {
-                DWORD pid = pe32.th32ProcessID;
-                if (pid <= 4) {
-                    continue;
-                }
-                QString procName = QString::fromWCharArray(pe32.szExeFile);
-                if (procName.isEmpty()) {
-                    continue;
-                }
-                
-                QString procNameLower = procName.toLower();
-                if (systemExes.contains(procNameLower)) {
-                    continue;
-                }
-                
-                QString displayName = QString("%1 (PID: %2)").arg(procName).arg(pid);
-                map[displayName] = static_cast<int>(pid);
-            } while (Process32NextW(hProcessSnap, &pe32));
+        HANDLE hProcessSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if (hProcessSnap != INVALID_HANDLE_VALUE) {
+            PROCESSENTRY32W pe32;
+            pe32.dwSize = sizeof(PROCESSENTRY32W);
+            
+            if (Process32FirstW(hProcessSnap, &pe32)) {
+                static const QStringList systemExes = {
+                    "svchost.exe", "services.exe", "lsass.exe", "csrss.exe", "smss.exe",
+                    "wininit.exe", "winlogon.exe", "spoolsv.exe", "dwm.exe", "taskhostw.exe",
+                    "conhost.exe", "dllhost.exe", "sihost.exe", "fontdrvhost.exe", "ctfmon.exe",
+                    "shellexperiencehost.exe", "searchhost.exe", "runtimebroker.exe"
+                };
+                do {
+                    DWORD pid = pe32.th32ProcessID;
+                    if (pid <= 4) {
+                        continue;
+                    }
+                    QString procName = QString::fromWCharArray(pe32.szExeFile);
+                    if (procName.isEmpty()) {
+                        continue;
+                    }
+                    
+                    QString procNameLower = procName.toLower();
+                    if (systemExes.contains(procNameLower)) {
+                        continue;
+                    }
+                    
+                    QString displayName = QString("%1 (PID: %2)").arg(procName).arg(pid);
+                    newMap[displayName] = static_cast<int>(pid);
+                } while (Process32NextW(hProcessSnap, &pe32));
+            }
+            CloseHandle(hProcessSnap);
         }
-        CloseHandle(hProcessSnap);
-    }
-    
-    if (map.isEmpty()) {
-        map["Discord.exe"] = 1420;
-        map["chrome.exe"] = 9812;
-        map["spotify.exe"] = 4322;
-    }
-    
-    return map;
+        
+        if (newMap.isEmpty()) {
+            newMap["Discord.exe (PID: 1420)"] = 1420;
+            newMap["chrome.exe (PID: 9812)"] = 9812;
+            newMap["spotify.exe (PID: 4322)"] = 4322;
+        }
+        
+        QMetaObject::invokeMethod(this, [this, newMap]() {
+            m_availableProcesses = newMap;
+            m_updatingProcesses.store(false);
+            emit processesChanged();
+        });
+    }).detach();
 }
 
 void AudioEngineBridge::startApplicationCapture(int channelIdx, QString processName, int pid) {

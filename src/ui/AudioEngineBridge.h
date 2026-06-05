@@ -179,6 +179,7 @@ public:
     Q_INVOKABLE QVariantList getOutputPatches() const;
 
     QVariantMap availableProcesses() const;
+    void refreshProcessesAsync();
     Q_INVOKABLE void startApplicationCapture(int channelIdx, QString processName, int pid);
     Q_INVOKABLE void stopApplicationCapture(int channelIdx);
 
@@ -474,6 +475,10 @@ private:
     QList<double> m_channelPeaks;
     QList<double> m_busPeaks;
     float m_masterPeak = 0.0f;
+
+    QVariantMap m_availableProcesses;
+    std::atomic<bool> m_updatingProcesses{false};
+    int m_processListCounter = 0;
 
     bool pushCommand(const RoutingCommand& cmd);
 };
