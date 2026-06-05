@@ -874,19 +874,54 @@ void AudioEngineBridge::setInputPatch(int channelIdx, int type, int index) {
     emit patchesChanged();
 }
 
-void AudioEngineBridge::setOutputPatch(int hwOutputIdx, int busIdx, bool active) {
-    if (hwOutputIdx < 0 || hwOutputIdx >= m_uiOutputPatches.size()) {
+void AudioEngineBridge::setOutputPatch(int busIdx, int hwOutputIdx, bool active) {
+    if (busIdx < 0 || busIdx >= m_uiOutputPatches.size()) {
         return;
     }
-    m_uiOutputPatches[hwOutputIdx].busIdx = busIdx;
-    m_uiOutputPatches[hwOutputIdx].active = active;
-    pushCommand(RoutingCommand{
-        RoutingCommandType::SetOutputPatch,
-        static_cast<uint32_t>(hwOutputIdx),
-        static_cast<uint32_t>(busIdx),
-        0.0f,
-        active ? 1U : 0U
-    });
+
+    if (active && hwOutputIdx >= 0 && hwOutputIdx < 8) {
+        for (int i = 0; i < m_uiOutputPatches.size(); ++i) {
+            if (i != busIdx && m_uiOutputPatches[i].active && m_uiOutputPatches[i].hwOutputIdx == hwOutputIdx) {
+                m_uiOutputPatches[i].active = false;
+                pushCommand(RoutingCommand{
+                    RoutingCommandType::SetOutputPatch,
+                    static_cast<uint32_t>(hwOutputIdx),
+                    static_cast<uint32_t>(i),
+                    0.0f,
+                    0U
+                });
+            }
+        }
+    }
+
+    int oldHwOutputIdx = m_uiOutputPatches[busIdx].hwOutputIdx;
+    bool oldActive = m_uiOutputPatches[busIdx].active;
+
+    m_uiOutputPatches[busIdx].hwOutputIdx = hwOutputIdx;
+    m_uiOutputPatches[busIdx].active = active;
+
+    if (oldActive && oldHwOutputIdx >= 0 && oldHwOutputIdx < 8) {
+        if (!active || oldHwOutputIdx != hwOutputIdx) {
+            pushCommand(RoutingCommand{
+                RoutingCommandType::SetOutputPatch,
+                static_cast<uint32_t>(oldHwOutputIdx),
+                static_cast<uint32_t>(busIdx),
+                0.0f,
+                0U
+            });
+        }
+    }
+
+    if (active && hwOutputIdx >= 0 && hwOutputIdx < 8) {
+        pushCommand(RoutingCommand{
+            RoutingCommandType::SetOutputPatch,
+            static_cast<uint32_t>(hwOutputIdx),
+            static_cast<uint32_t>(busIdx),
+            0.0f,
+            1U
+        });
+    }
+
     emit patchesChanged();
 }
 

@@ -8389,19 +8389,32 @@ Window {
                                                 model: ["Unpatched", "Master L", "Master R", "Aux 1", "Aux 2", "Aux 3", "Aux 4", "Rec L", "Rec R"]
                                                 
                                                 currentIndex: {
-                                                    if (audioCore.outputPatches && audioCore.outputPatches[portIdx] !== undefined) {
-                                                        var patch = audioCore.outputPatches[portIdx];
-                                                        if (patch.active) {
-                                                            return patch.busIdx + 1;
+                                                    if (audioCore.outputPatches) {
+                                                        for (var i = 0; i < audioCore.outputPatches.length; ++i) {
+                                                            var patch = audioCore.outputPatches[i];
+                                                            if (patch && patch.active && patch.hwOutputIdx === portIdx) {
+                                                                return patch.busIdx + 1;
+                                                            }
                                                         }
                                                     }
                                                     return 0;
                                                 }
 
                                                 onActivated: {
-                                                    var active = index > 0;
-                                                    var busIdx = index - 1;
-                                                    audioCore.setOutputPatch(portIdx, busIdx, active);
+                                                    if (index === 0) {
+                                                        if (audioCore.outputPatches) {
+                                                            for (var i = 0; i < audioCore.outputPatches.length; ++i) {
+                                                                var patch = audioCore.outputPatches[i];
+                                                                if (patch && patch.active && patch.hwOutputIdx === portIdx) {
+                                                                    audioCore.setOutputPatch(patch.busIdx, portIdx, false);
+                                                                    break;
+                                                                }
+                                                            }
+                                                        }
+                                                    } else {
+                                                        var busIdx = index - 1;
+                                                        audioCore.setOutputPatch(busIdx, portIdx, true);
+                                                    }
                                                 }
                                             }
 

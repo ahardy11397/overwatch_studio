@@ -174,7 +174,7 @@ public:
     Q_INVOKABLE void configureDevice(QString driver, QString deviceName, int sampleRate, int bufferSize);
     Q_INVOKABLE QVariantList getActivePatches() const;
     Q_INVOKABLE void setInputPatch(int channelIdx, int type, int index);
-    Q_INVOKABLE void setOutputPatch(int hwOutputIdx, int busIdx, bool active);
+    Q_INVOKABLE void setOutputPatch(int busIdx, int hwOutputIdx, bool active);
     Q_INVOKABLE QVariantList getInputPatches() const;
     Q_INVOKABLE QVariantList getOutputPatches() const;
 
