@@ -1,6 +1,7 @@
 // Touch for Task 1: Summing Engine & C++ Device Selector
 #include "AudioEngineBridge.h"
 #include <windows.h>
+#include <tlhelp32.h>
 #include <timeapi.h>
 #pragma comment(lib, "winmm.lib")
 #include "../core/audio/AudioEngineCore.h"
@@ -761,6 +762,13 @@ void AudioEngineBridge::processAudioFeedback() {
     m_masterPeak = nextMaster;
 
     emit peakMeterChanged();
+
+    static int processListCounter = 0;
+    processListCounter++;
+    if (processListCounter >= 120) {
+        processListCounter = 0;
+        emit processesChanged();
+    }
 }
 
 void AudioEngineBridge::setActiveSampleRate(int rate) {
@@ -915,9 +923,47 @@ bool AudioEngineBridge::pushCommand(const RoutingCommand& cmd) {
 
 QVariantMap AudioEngineBridge::availableProcesses() const {
     QVariantMap map;
-    map["Discord.exe"] = 1420;
-    map["chrome.exe"] = 9812;
-    map["spotify.exe"] = 4322;
+    
+    HANDLE hProcessSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (hProcessSnap != INVALID_HANDLE_VALUE) {
+        PROCESSENTRY32W pe32;
+        pe32.dwSize = sizeof(PROCESSENTRY32W);
+        
+        if (Process32FirstW(hProcessSnap, &pe32)) {
+            static const QStringList systemExes = {
+                "svchost.exe", "services.exe", "lsass.exe", "csrss.exe", "smss.exe",
+                "wininit.exe", "winlogon.exe", "spoolsv.exe", "dwm.exe", "taskhostw.exe",
+                "conhost.exe", "dllhost.exe", "sihost.exe", "fontdrvhost.exe", "ctfmon.exe",
+                "shellexperiencehost.exe", "searchhost.exe", "runtimebroker.exe"
+            };
+            do {
+                DWORD pid = pe32.th32ProcessID;
+                if (pid <= 4) {
+                    continue;
+                }
+                QString procName = QString::fromWCharArray(pe32.szExeFile);
+                if (procName.isEmpty()) {
+                    continue;
+                }
+                
+                QString procNameLower = procName.toLower();
+                if (systemExes.contains(procNameLower)) {
+                    continue;
+                }
+                
+                QString displayName = QString("%1 (PID: %2)").arg(procName).arg(pid);
+                map[displayName] = static_cast<int>(pid);
+            } while (Process32NextW(hProcessSnap, &pe32));
+        }
+        CloseHandle(hProcessSnap);
+    }
+    
+    if (map.isEmpty()) {
+        map["Discord.exe"] = 1420;
+        map["chrome.exe"] = 9812;
+        map["spotify.exe"] = 4322;
+    }
+    
     return map;
 }
 
