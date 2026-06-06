@@ -7899,6 +7899,7 @@ Window {
 
                             // --- INPUT PATCH PANEL ---
                             Rectangle {
+                                id: inputPatchPanel
                                 visible: patchBoardScrollView.patchSubTab === 0
                                 Layout.fillWidth: true
                                 implicitHeight: inputPatchLayout.implicitHeight + 24
@@ -7906,6 +7907,10 @@ Window {
                                 radius: 8
                                 border.color: "#252b36"
                                 border.width: 1
+
+                                // Cached lists for delegates
+                                property var deviceNamesList: audioCore.captureDevices ? audioCore.captureDevices.map(function(d) { return d.deviceName; }) : []
+                                property var availableProcessesList: audioCore.availableProcesses ? Object.keys(audioCore.availableProcesses) : []
 
                                 ColumnLayout {
                                     id: inputPatchLayout
@@ -7923,13 +7928,13 @@ Window {
                                     Repeater {
                                         model: 24
                                         delegate: RowLayout {
-                                            spacing: 12
+                                            spacing: 6
                                             Layout.fillWidth: true
                                             property int channelIdx: index
                                             
                                             // Channel Label (CH 1..24)
                                             Rectangle {
-                                                width: 40; height: 24
+                                                width: 36; height: 24
                                                 color: "#1a1c1e"
                                                 radius: 4
                                                 border.color: "#252b36"
@@ -7947,14 +7952,14 @@ Window {
                                                 text: "Channel " + (channelIdx + 1)
                                                 color: "#f8fafc"
                                                 font.pixelSize: 10
-                                                Layout.preferredWidth: 80
+                                                Layout.preferredWidth: 70
                                             }
                                             
                                             // Source Type ComboBox
                                             ComboBox {
                                                 id: srcTypeCombo
                                                 implicitHeight: 24
-                                                Layout.preferredWidth: 130
+                                                Layout.preferredWidth: 115
                                                 model: ["Unpatched", "ASIO Hardware", "Test Generator", "App Capture"]
                                                 
                                                 currentIndex: {
@@ -7972,12 +7977,16 @@ Window {
                                                     }
                                                     
                                                     if (newType === 3) {
-                                                        var processes = Object.keys(audioCore.availableProcesses);
-                                                        if (processes.length > 0) {
-                                                            var procName = processes[0];
-                                                            var pid = audioCore.availableProcesses[procName];
-                                                            audioCore.setInputPatch(channelIdx, 3, pid);
-                                                            audioCore.startApplicationCapture(channelIdx, procName, pid);
+                                                        if (audioCore.availableProcesses) {
+                                                            var processes = inputPatchPanel.availableProcessesList;
+                                                            if (processes.length > 0) {
+                                                                var procName = processes[0];
+                                                                var pid = audioCore.availableProcesses[procName];
+                                                                audioCore.setInputPatch(channelIdx, 3, pid);
+                                                                audioCore.startApplicationCapture(channelIdx, procName, pid);
+                                                            } else {
+                                                                audioCore.setInputPatch(channelIdx, 3, 0);
+                                                            }
                                                         } else {
                                                             audioCore.setInputPatch(channelIdx, 3, 0);
                                                         }
@@ -7993,17 +8002,17 @@ Window {
                                             ComboBox {
                                                 id: hwDeviceCombo
                                                 implicitHeight: 24
-                                                Layout.preferredWidth: 150
+                                                Layout.preferredWidth: 135
                                                 visible: srcTypeCombo.currentIndex === 1
                                                 
-                                                model: audioCore.captureDevices.map(function(d) { return d.deviceName; })
+                                                model: inputPatchPanel.deviceNamesList
                                                 
                                                 currentIndex: {
                                                     if (audioCore.inputPatches && audioCore.inputPatches[channelIdx] !== undefined) {
                                                         var patch = audioCore.inputPatches[channelIdx];
                                                         if (patch.type === 1) {
                                                             var devIdx = patch.index >> 8;
-                                                            if (devIdx >= 0 && devIdx < audioCore.captureDevices.length) {
+                                                            if (audioCore.captureDevices && devIdx >= 0 && devIdx < audioCore.captureDevices.length) {
                                                                 return devIdx;
                                                             }
                                                         }
@@ -8012,9 +8021,14 @@ Window {
                                                 }
                                                 
                                                 onActivated: {
-                                                    if (audioCore.captureDevices.length > 0) {
+                                                    if (audioCore.captureDevices && audioCore.captureDevices.length > 0) {
                                                         var devIdx = index;
+                                                        var dev = audioCore.captureDevices[devIdx];
+                                                        var maxChannels = dev ? dev.channels : 2;
                                                         var chIdx = hwChannelCombo.currentIndex;
+                                                        if (chIdx >= maxChannels) {
+                                                            chIdx = 0;
+                                                        }
                                                         var patchIdx = (devIdx << 8) | chIdx;
                                                         audioCore.setInputPatch(channelIdx, 1, patchIdx);
                                                     }
@@ -8025,7 +8039,7 @@ Window {
                                             ComboBox {
                                                 id: hwChannelCombo
                                                 implicitHeight: 24
-                                                Layout.preferredWidth: 80
+                                                Layout.preferredWidth: 75
                                                 visible: srcTypeCombo.currentIndex === 1
                                                 
                                                 model: {
@@ -8053,7 +8067,7 @@ Window {
                                                 }
                                                 
                                                 onActivated: {
-                                                    if (audioCore.captureDevices.length > 0) {
+                                                    if (audioCore.captureDevices && audioCore.captureDevices.length > 0) {
                                                         var devIdx = hwDeviceCombo.currentIndex;
                                                         var chIdx = index;
                                                         var patchIdx = (devIdx << 8) | chIdx;
@@ -8066,7 +8080,7 @@ Window {
                                             ComboBox {
                                                 id: generatorCombo
                                                 implicitHeight: 24
-                                                Layout.preferredWidth: 150
+                                                Layout.preferredWidth: 135
                                                 visible: srcTypeCombo.currentIndex === 2
                                                 model: ["1kHz Sine Wave", "Pink Noise"]
                                                 
@@ -8089,16 +8103,16 @@ Window {
                                             ComboBox {
                                                 id: appCaptureCombo
                                                 implicitHeight: 24
-                                                Layout.preferredWidth: 230
+                                                Layout.preferredWidth: 210
                                                 visible: srcTypeCombo.currentIndex === 3
                                                 
-                                                model: Object.keys(audioCore.availableProcesses)
+                                                model: inputPatchPanel.availableProcessesList
                                                 
                                                 currentIndex: {
                                                     if (audioCore.inputPatches && audioCore.inputPatches[channelIdx] !== undefined) {
                                                         var patch = audioCore.inputPatches[channelIdx];
-                                                        if (patch.type === 3) {
-                                                            var processes = Object.keys(audioCore.availableProcesses);
+                                                        if (patch.type === 3 && audioCore.availableProcesses) {
+                                                            var processes = inputPatchPanel.availableProcessesList;
                                                             for (var i = 0; i < processes.length; i++) {
                                                                 if (audioCore.availableProcesses[processes[i]] === patch.index) {
                                                                     return i;
@@ -8110,12 +8124,14 @@ Window {
                                                 }
                                                 
                                                 onActivated: {
-                                                    var processes = Object.keys(audioCore.availableProcesses);
-                                                    if (index >= 0 && index < processes.length) {
-                                                        var procName = processes[index];
-                                                        var pid = audioCore.availableProcesses[procName];
-                                                        audioCore.setInputPatch(channelIdx, 3, pid);
-                                                        audioCore.startApplicationCapture(channelIdx, procName, pid);
+                                                    if (audioCore.availableProcesses) {
+                                                        var processes = inputPatchPanel.availableProcessesList;
+                                                        if (index >= 0 && index < processes.length) {
+                                                            var procName = processes[index];
+                                                            var pid = audioCore.availableProcesses[procName];
+                                                            audioCore.setInputPatch(channelIdx, 3, pid);
+                                                            audioCore.startApplicationCapture(channelIdx, procName, pid);
+                                                        }
                                                     }
                                                 }
                                             }
@@ -8124,8 +8140,8 @@ Window {
                                             Text {
                                                 Layout.fillWidth: true
                                                 text: {
-                                                    if (srcTypeCombo.currentIndex === 3) {
-                                                        var processes = Object.keys(audioCore.availableProcesses);
+                                                    if (srcTypeCombo.currentIndex === 3 && audioCore.availableProcesses) {
+                                                        var processes = inputPatchPanel.availableProcessesList;
                                                         var selIdx = appCaptureCombo.currentIndex;
                                                         if (selIdx >= 0 && selIdx < processes.length) {
                                                             var procName = processes[selIdx];
