@@ -30,7 +30,18 @@ WASAPIDeviceWorker::WASAPIDeviceWorker(IMMDevice* device, Mode mode) noexcept
             propStore->Release();
         }
     }
-    m_ringBuffer.resize(16384, 0.0f);
+    // Pre-allocate dynamic ring buffers and read positions for 2 default channels
+    // to support mock buffer test operations without calling start()
+    m_channelRingBuffers.resize(2);
+    for (int c = 0; c < 2; ++c) {
+        m_channelRingBuffers[c].resize(m_ringBufferSize, 0.0f);
+    }
+    m_ringReadPos.assign(2, 0);
+    m_ringWritePos = 0;
+}
+
+int WASAPIDeviceWorker::getChannelCount() const noexcept {
+    return m_mixFormat ? static_cast<int>(m_mixFormat->nChannels) : 0;
 }
 
 WASAPIDeviceWorker::~WASAPIDeviceWorker() {
@@ -57,6 +68,14 @@ bool WASAPIDeviceWorker::start() noexcept {
 
     hr = m_audioClient->Initialize(AUDCLNT_SHAREMODE_SHARED, flags, duration, 0, m_mixFormat, nullptr);
     if (FAILED(hr)) return false;
+
+    int channels = m_mixFormat->nChannels;
+    m_channelRingBuffers.resize(channels);
+    for (int c = 0; c < channels; ++c) {
+        m_channelRingBuffers[c].resize(m_ringBufferSize, 0.0f);
+    }
+    m_ringReadPos.assign(channels, 0);
+    m_ringWritePos = 0;
 
     hr = m_audioClient->GetBufferSize(&m_bufferFrameCount);
     if (FAILED(hr)) return false;
@@ -111,31 +130,33 @@ void WASAPIDeviceWorker::runLoop() noexcept {
                     }
 
                     for (UINT32 f = 0; f < framesAvailable; ++f) {
-                        float val = 0.0f;
-                        if (isFloat) {
-                            if (m_mixFormat->wBitsPerSample == 32) {
-                                val = reinterpret_cast<float*>(data)[f * channels];
-                            } else if (m_mixFormat->wBitsPerSample == 64) {
-                                val = static_cast<float>(reinterpret_cast<double*>(data)[f * channels]);
-                            }
-                        } else { // PCM
-                            if (m_mixFormat->wBitsPerSample == 16) {
-                                val = static_cast<float>(reinterpret_cast<short*>(data)[f * channels]) / 32768.0f;
-                            } else if (m_mixFormat->wBitsPerSample == 24) {
-                                size_t sampleOffset = (f * channels) * 3;
-                                int32_t valInt = (data[sampleOffset]) |
-                                                 (data[sampleOffset + 1] << 8) |
-                                                 (data[sampleOffset + 2] << 16);
-                                if (valInt & 0x800000) {
-                                    valInt |= 0xFF000000;
+                        for (int c = 0; c < channels; ++c) {
+                            float val = 0.0f;
+                            if (isFloat) {
+                                if (m_mixFormat->wBitsPerSample == 32) {
+                                    val = reinterpret_cast<float*>(data)[f * channels + c];
+                                } else if (m_mixFormat->wBitsPerSample == 64) {
+                                    val = static_cast<float>(reinterpret_cast<double*>(data)[f * channels + c]);
                                 }
-                                val = static_cast<float>(valInt) / 8388608.0f;
-                            } else if (m_mixFormat->wBitsPerSample == 32) {
-                                val = static_cast<float>(reinterpret_cast<int32_t*>(data)[f * channels]) / 2147483648.0f;
+                            } else { // PCM
+                                if (m_mixFormat->wBitsPerSample == 16) {
+                                    val = static_cast<float>(reinterpret_cast<short*>(data)[f * channels + c]) / 32768.0f;
+                                } else if (m_mixFormat->wBitsPerSample == 24) {
+                                    size_t sampleOffset = (f * channels + c) * 3;
+                                    int32_t valInt = (data[sampleOffset]) |
+                                                     (data[sampleOffset + 1] << 8) |
+                                                     (data[sampleOffset + 2] << 16);
+                                    if (valInt & 0x800000) {
+                                        valInt |= 0xFF000000;
+                                    }
+                                    val = static_cast<float>(valInt) / 8388608.0f;
+                                } else if (m_mixFormat->wBitsPerSample == 32) {
+                                    val = static_cast<float>(reinterpret_cast<int32_t*>(data)[f * channels + c]) / 2147483648.0f;
+                                }
                             }
+                            m_channelRingBuffers[c][m_ringWritePos] = val;
                         }
-                        m_ringBuffer[m_ringWritePos] = val;
-                        m_ringWritePos = (m_ringWritePos + 1) % m_ringBuffer.size();
+                        m_ringWritePos = (m_ringWritePos + 1) % m_ringBufferSize;
                     }
                     m_captureClient->ReleaseBuffer(framesAvailable);
                 }
@@ -151,33 +172,36 @@ void WASAPIDeviceWorker::runLoop() noexcept {
                     if (SUCCEEDED(hr) && data) {
                         std::lock_guard<std::mutex> lock(m_ringMutex);
                         
-                        size_t buffered = (m_ringWritePos >= m_ringReadPos) ? 
-                                          (m_ringWritePos - m_ringReadPos) : 
-                                          (m_ringBuffer.size() - m_ringReadPos + m_ringWritePos);
+                        int channels = m_mixFormat->nChannels;
+                        if (m_ringReadPos.size() != static_cast<size_t>(channels)) {
+                            m_ringReadPos.assign(channels, 0);
+                        }
+
+                        size_t buffered = (m_ringWritePos >= m_ringReadPos[0]) ? 
+                                          (m_ringWritePos - m_ringReadPos[0]) : 
+                                          (m_ringBufferSize - m_ringReadPos[0] + m_ringWritePos);
                                           
                         size_t maxAllowed = framesToWrite + 512;
                         if (buffered > maxAllowed) {
                             size_t targetSamples = framesToWrite + 256;
-                            m_ringReadPos = (m_ringWritePos + m_ringBuffer.size() - targetSamples) % m_ringBuffer.size();
+                            m_ringReadPos[0] = (m_ringWritePos + m_ringBufferSize - targetSamples) % m_ringBufferSize;
                         }
-
-                        int channels = m_mixFormat->nChannels;
 
                         bool isFloat = (m_mixFormat->wFormatTag == WAVE_FORMAT_IEEE_FLOAT);
                         bool isPCM = (m_mixFormat->wFormatTag == WAVE_FORMAT_PCM);
                         if (m_mixFormat->wFormatTag == WAVE_FORMAT_EXTENSIBLE) {
                             WAVEFORMATEXTENSIBLE* pExt = reinterpret_cast<WAVEFORMATEXTENSIBLE*>(m_mixFormat);
                             if (pExt->SubFormat == KSDATAFORMAT_SUBTYPE_IEEE_FLOAT) {
-                                isFloat = true;
+                                  isFloat = true;
                             } else if (pExt->SubFormat == KSDATAFORMAT_SUBTYPE_PCM) {
-                                isPCM = true;
+                                  isPCM = true;
                             }
                         }
 
                         for (UINT32 f = 0; f < framesToWrite; ++f) {
-                            float val = m_ringBuffer[m_ringReadPos];
-                            m_ringBuffer[m_ringReadPos] = 0.0f; // Clear
-                            m_ringReadPos = (m_ringReadPos + 1) % m_ringBuffer.size();
+                            float val = m_channelRingBuffers[0][m_ringReadPos[0]];
+                            m_channelRingBuffers[0][m_ringReadPos[0]] = 0.0f; // Clear
+                            m_ringReadPos[0] = (m_ringReadPos[0] + 1) % m_ringBufferSize;
 
                             for (int c = 0; c < channels; ++c) {
                                 if (isFloat) {
@@ -217,36 +241,51 @@ void WASAPIDeviceWorker::runLoop() noexcept {
 
 size_t WASAPIDeviceWorker::getBufferedSampleCount() const noexcept {
     std::lock_guard<std::mutex> lock(m_ringMutex);
-    return (m_ringWritePos >= m_ringReadPos) ? 
-           (m_ringWritePos - m_ringReadPos) : 
-           (m_ringBuffer.size() - m_ringReadPos + m_ringWritePos);
+    if (m_ringReadPos.empty()) return 0;
+    size_t readPos = m_ringReadPos[0];
+    return (m_ringWritePos >= readPos) ? 
+           (m_ringWritePos - readPos) : 
+           (m_ringBufferSize - readPos + m_ringWritePos);
 }
 
-void WASAPIDeviceWorker::readCapturedSamples(float* destBuffer, size_t numSamples) noexcept {
+void WASAPIDeviceWorker::readCapturedSamples(int deviceChannelIdx, float* destBuffer, size_t numSamples) noexcept {
     std::lock_guard<std::mutex> lock(m_ringMutex);
     
-    size_t buffered = (m_ringWritePos >= m_ringReadPos) ? 
-                      (m_ringWritePos - m_ringReadPos) : 
-                      (m_ringBuffer.size() - m_ringReadPos + m_ringWritePos);
+    if (deviceChannelIdx < 0 || deviceChannelIdx >= static_cast<int>(m_channelRingBuffers.size())) {
+        std::fill_n(destBuffer, numSamples, 0.0f);
+        return;
+    }
+    
+    size_t readPos = m_ringReadPos[deviceChannelIdx];
+    size_t buffered = (m_ringWritePos >= readPos) ? 
+                      (m_ringWritePos - readPos) : 
+                      (m_ringBufferSize - readPos + m_ringWritePos);
                       
     if (buffered > 512) {
-        m_ringReadPos = (m_ringWritePos + m_ringBuffer.size() - 512) % m_ringBuffer.size();
+        readPos = (m_ringWritePos + m_ringBufferSize - 512) % m_ringBufferSize;
     }
 
+    const auto& chanBuf = m_channelRingBuffers[deviceChannelIdx];
     for (size_t i = 0; i < numSamples; ++i) {
-        if (m_ringReadPos != m_ringWritePos) {
-            destBuffer[i] = m_ringBuffer[m_ringReadPos];
-            m_ringReadPos = (m_ringReadPos + 1) % m_ringBuffer.size();
+        if (readPos != m_ringWritePos) {
+            destBuffer[i] = chanBuf[readPos];
+            readPos = (readPos + 1) % m_ringBufferSize;
         } else {
             destBuffer[i] = 0.0f; // Silence fallback
         }
     }
+    m_ringReadPos[deviceChannelIdx] = readPos;
+}
+
+void WASAPIDeviceWorker::readCapturedSamples(float* destBuffer, size_t numSamples) noexcept {
+    readCapturedSamples(0, destBuffer, numSamples);
 }
 
 void WASAPIDeviceWorker::writeRenderSamples(const float* srcBuffer, size_t numSamples) noexcept {
     std::lock_guard<std::mutex> lock(m_ringMutex);
+    if (m_channelRingBuffers.empty() || m_channelRingBuffers[0].empty()) return;
     for (size_t i = 0; i < numSamples; ++i) {
-        m_ringBuffer[m_ringWritePos] = srcBuffer[i];
-        m_ringWritePos = (m_ringWritePos + 1) % m_ringBuffer.size();
+        m_channelRingBuffers[0][m_ringWritePos] = srcBuffer[i];
+        m_ringWritePos = (m_ringWritePos + 1) % m_ringBufferSize;
     }
 }

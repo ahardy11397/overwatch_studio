@@ -19,6 +19,7 @@ public:
     void stop() noexcept;
 
     // For Capture: Pulls latest mono/stereo samples, converts format to float
+    void readCapturedSamples(int deviceChannelIdx, float* destBuffer, size_t numSamples) noexcept;
     void readCapturedSamples(float* destBuffer, size_t numSamples) noexcept;
 
     // For Render: Pushes mono/stereo float samples, converts to device format
@@ -26,6 +27,7 @@ public:
 
     bool isRunning() const noexcept { return m_running.load(std::memory_order_relaxed); }
     std::wstring getDeviceName() const noexcept { return m_deviceName; }
+    int getChannelCount() const noexcept;
     size_t getBufferedSampleCount() const noexcept;
 
 private:
@@ -45,8 +47,9 @@ private:
     UINT32 m_bufferFrameCount = 0;
 
     // Thread-safe ring buffers for decoupling I/O threads
-    std::vector<float> m_ringBuffer;
+    std::vector<std::vector<float>> m_channelRingBuffers;
     size_t m_ringWritePos = 0;
-    size_t m_ringReadPos = 0;
+    std::vector<size_t> m_ringReadPos;
+    size_t m_ringBufferSize = 16384;
     mutable std::mutex m_ringMutex;
 };
