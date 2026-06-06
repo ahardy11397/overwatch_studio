@@ -7863,96 +7863,6 @@ Window {
                                 Layout.fillWidth: true
                             }
 
-                            // --- DEVICE CONFIGURATION PANEL ---
-                            Rectangle {
-                                Layout.fillWidth: true
-                                implicitHeight: 120
-                                color: "#101216"
-                                radius: 8
-                                border.color: "#252b36"
-                                border.width: 1
-
-                                ColumnLayout {
-                                    anchors.fill: parent
-                                    anchors.margins: 10
-                                    spacing: 8
-
-                                    Text {
-                                        text: "ASIO DEVICE CONFIGURATION"
-                                        color: "#8a8d98"
-                                        font.pixelSize: 9
-                                        font.bold: true
-                                    }
-
-                                    RowLayout {
-                                        Layout.fillWidth: true
-                                        spacing: 6
-                                        
-                                        ColumnLayout {
-                                            Layout.fillWidth: true
-                                            Text { text: "DRIVER TYPE"; color: "#8a8d98"; font.pixelSize: 8; font.bold: true }
-                                            ComboBox {
-                                                id: driverCombo
-                                                Layout.fillWidth: true
-                                                implicitHeight: 24
-                                                model: ["ASIO (Professional)", "WASAPI Shared", "DirectSound"]
-                                                currentIndex: 0
-                                                onCurrentIndexChanged: audioCore.configureDevice(currentText, audioCore.activeDevice, audioCore.activeSampleRate, audioCore.activeBufferSize)
-                                            }
-                                        }
-
-                                        ColumnLayout {
-                                            Layout.fillWidth: true
-                                            Text { text: "HARDWARE INTERFACE"; color: "#8a8d98"; font.pixelSize: 8; font.bold: true }
-                                            ComboBox {
-                                                id: deviceCombo
-                                                Layout.fillWidth: true
-                                                implicitHeight: 24
-                                                model: ["Dante Virtual Soundcard", "ASIO Focusrite USB", "Primary Audio Interface"]
-                                                currentIndex: 0
-                                                onCurrentIndexChanged: audioCore.configureDevice(driverCombo.currentText, currentText, audioCore.activeSampleRate, audioCore.activeBufferSize)
-                                            }
-                                        }
-                                    }
-
-                                    RowLayout {
-                                        Layout.fillWidth: true
-                                        spacing: 6
-
-                                        ColumnLayout {
-                                            Layout.fillWidth: true
-                                            Text { text: "SAMPLE RATE"; color: "#8a8d98"; font.pixelSize: 8; font.bold: true }
-                                            ComboBox {
-                                                id: rateCombo
-                                                Layout.fillWidth: true
-                                                implicitHeight: 24
-                                                model: ["48000 Hz", "44100 Hz", "96000 Hz"]
-                                                currentIndex: 0
-                                                onCurrentIndexChanged: {
-                                                    var val = parseInt(currentText);
-                                                    audioCore.activeSampleRate = val;
-                                                }
-                                            }
-                                        }
-
-                                        ColumnLayout {
-                                            Layout.fillWidth: true
-                                            Text { text: "BUFFER SIZE"; color: "#8a8d98"; font.pixelSize: 8; font.bold: true }
-                                            ComboBox {
-                                                id: bufferCombo
-                                                Layout.fillWidth: true
-                                                implicitHeight: 24
-                                                model: ["128 samples", "64 samples", "256 samples", "512 samples"]
-                                                currentIndex: 0
-                                                onCurrentIndexChanged: {
-                                                    var val = parseInt(currentText);
-                                                    audioCore.activeBufferSize = val;
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
 
                             // --- SUB-TAB SWITCHER NAVIGATION BAR ---
                             RowLayout {
@@ -8071,53 +7981,99 @@ Window {
                                                         } else {
                                                             audioCore.setInputPatch(channelIdx, 3, 0);
                                                         }
+                                                    } else if (newType === 1) {
+                                                        audioCore.setInputPatch(channelIdx, 1, 0); // Default to device 0, channel 0
                                                     } else {
                                                         audioCore.setInputPatch(channelIdx, newType, 0);
                                                     }
                                                 }
                                             }
                                             
-                                            // Source Detail ComboBox
+                                            // --- HARDWARE DEVICE SELECTION (Visible only for type 1) ---
                                             ComboBox {
-                                                id: srcDetailCombo
+                                                id: hwDeviceCombo
                                                 implicitHeight: 24
                                                 Layout.preferredWidth: 150
-                                                enabled: srcTypeCombo.currentIndex > 0
+                                                visible: srcTypeCombo.currentIndex === 1
+                                                
+                                                model: audioCore.captureDevices.map(function(d) { return d.deviceName; })
+                                                
+                                                currentIndex: {
+                                                    if (audioCore.inputPatches && audioCore.inputPatches[channelIdx] !== undefined) {
+                                                        var patch = audioCore.inputPatches[channelIdx];
+                                                        if (patch.type === 1) {
+                                                            var devIdx = patch.index >> 8;
+                                                            if (devIdx >= 0 && devIdx < audioCore.captureDevices.length) {
+                                                                return devIdx;
+                                                            }
+                                                        }
+                                                    }
+                                                    return 0;
+                                                }
+                                                
+                                                onActivated: {
+                                                    if (audioCore.captureDevices.length > 0) {
+                                                        var devIdx = index;
+                                                        var chIdx = hwChannelCombo.currentIndex;
+                                                        var patchIdx = (devIdx << 8) | chIdx;
+                                                        audioCore.setInputPatch(channelIdx, 1, patchIdx);
+                                                    }
+                                                }
+                                            }
+                                            
+                                            // --- HARDWARE CHANNEL SELECTION (Visible only for type 1) ---
+                                            ComboBox {
+                                                id: hwChannelCombo
+                                                implicitHeight: 24
+                                                Layout.preferredWidth: 80
+                                                visible: srcTypeCombo.currentIndex === 1
                                                 
                                                 model: {
-                                                    var type = srcTypeCombo.currentIndex;
-                                                    if (type === 1) {
-                                                        return [
-                                                            "ASIO Port 1", "ASIO Port 2", "ASIO Port 3", "ASIO Port 4",
-                                                            "ASIO Port 5", "ASIO Port 6", "ASIO Port 7", "ASIO Port 8",
-                                                            "ASIO Port 9", "ASIO Port 10", "ASIO Port 11", "ASIO Port 12",
-                                                            "ASIO Port 13", "ASIO Port 14", "ASIO Port 15", "ASIO Port 16"
-                                                        ];
-                                                    } else if (type === 2) {
-                                                        return ["1kHz Sine Wave", "Pink Noise"];
-                                                    } else if (type === 3) {
-                                                        return Object.keys(audioCore.availableProcesses);
-                                                    } else {
-                                                        return ["-"];
+                                                    var devIdx = hwDeviceCombo.currentIndex;
+                                                    if (audioCore.captureDevices && devIdx >= 0 && devIdx < audioCore.captureDevices.length) {
+                                                        var dev = audioCore.captureDevices[devIdx];
+                                                        var count = dev ? dev.channels : 2;
+                                                        var list = [];
+                                                        for (var i = 0; i < count; ++i) {
+                                                            list.push("Input " + (i + 1));
+                                                        }
+                                                        return list;
                                                     }
+                                                    return ["Input 1", "Input 2"];
                                                 }
                                                 
                                                 currentIndex: {
-                                                    var type = srcTypeCombo.currentIndex;
-                                                    if (type === 0) return 0;
                                                     if (audioCore.inputPatches && audioCore.inputPatches[channelIdx] !== undefined) {
-                                                        var backendType = audioCore.inputPatches[channelIdx].type;
-                                                        if (backendType === type) {
-                                                            var patch = audioCore.inputPatches[channelIdx];
-                                                            if (type === 3) {
-                                                                var processes = Object.keys(audioCore.availableProcesses);
-                                                                for (var i = 0; i < processes.length; i++) {
-                                                                    if (audioCore.availableProcesses[processes[i]] === patch.index) {
-                                                                        return i;
-                                                                    }
-                                                                }
-                                                                return -1; // fallback when PID is no longer running
-                                                            }
+                                                        var patch = audioCore.inputPatches[channelIdx];
+                                                        if (patch.type === 1) {
+                                                            return patch.index & 0xFF;
+                                                        }
+                                                    }
+                                                    return 0;
+                                                }
+                                                
+                                                onActivated: {
+                                                    if (audioCore.captureDevices.length > 0) {
+                                                        var devIdx = hwDeviceCombo.currentIndex;
+                                                        var chIdx = index;
+                                                        var patchIdx = (devIdx << 8) | chIdx;
+                                                        audioCore.setInputPatch(channelIdx, 1, patchIdx);
+                                                    }
+                                                }
+                                            }
+                                            
+                                            // --- TEST GENERATOR SELECTION (Visible only for type 2) ---
+                                            ComboBox {
+                                                id: generatorCombo
+                                                implicitHeight: 24
+                                                Layout.preferredWidth: 150
+                                                visible: srcTypeCombo.currentIndex === 2
+                                                model: ["1kHz Sine Wave", "Pink Noise"]
+                                                
+                                                currentIndex: {
+                                                    if (audioCore.inputPatches && audioCore.inputPatches[channelIdx] !== undefined) {
+                                                        var patch = audioCore.inputPatches[channelIdx];
+                                                        if (patch.type === 2) {
                                                             return patch.index;
                                                         }
                                                     }
@@ -8125,17 +8081,41 @@ Window {
                                                 }
                                                 
                                                 onActivated: {
-                                                    var type = srcTypeCombo.currentIndex;
-                                                    if (type === 1 || type === 2) {
-                                                        audioCore.setInputPatch(channelIdx, type, index);
-                                                    } else if (type === 3) {
-                                                        var processes = Object.keys(audioCore.availableProcesses);
-                                                        if (index >= 0 && index < processes.length) {
-                                                            var procName = processes[index];
-                                                            var pid = audioCore.availableProcesses[procName];
-                                                            audioCore.setInputPatch(channelIdx, 3, pid);
-                                                            audioCore.startApplicationCapture(channelIdx, procName, pid);
+                                                    audioCore.setInputPatch(channelIdx, 2, index);
+                                                }
+                                            }
+                                            
+                                            // --- APP CAPTURE SELECTION (Visible only for type 3) ---
+                                            ComboBox {
+                                                id: appCaptureCombo
+                                                implicitHeight: 24
+                                                Layout.preferredWidth: 230
+                                                visible: srcTypeCombo.currentIndex === 3
+                                                
+                                                model: Object.keys(audioCore.availableProcesses)
+                                                
+                                                currentIndex: {
+                                                    if (audioCore.inputPatches && audioCore.inputPatches[channelIdx] !== undefined) {
+                                                        var patch = audioCore.inputPatches[channelIdx];
+                                                        if (patch.type === 3) {
+                                                            var processes = Object.keys(audioCore.availableProcesses);
+                                                            for (var i = 0; i < processes.length; i++) {
+                                                                if (audioCore.availableProcesses[processes[i]] === patch.index) {
+                                                                    return i;
+                                                                }
+                                                            }
                                                         }
+                                                    }
+                                                    return -1;
+                                                }
+                                                
+                                                onActivated: {
+                                                    var processes = Object.keys(audioCore.availableProcesses);
+                                                    if (index >= 0 && index < processes.length) {
+                                                        var procName = processes[index];
+                                                        var pid = audioCore.availableProcesses[procName];
+                                                        audioCore.setInputPatch(channelIdx, 3, pid);
+                                                        audioCore.startApplicationCapture(channelIdx, procName, pid);
                                                     }
                                                 }
                                             }
@@ -8146,7 +8126,7 @@ Window {
                                                 text: {
                                                     if (srcTypeCombo.currentIndex === 3) {
                                                         var processes = Object.keys(audioCore.availableProcesses);
-                                                        var selIdx = srcDetailCombo.currentIndex;
+                                                        var selIdx = appCaptureCombo.currentIndex;
                                                         if (selIdx >= 0 && selIdx < processes.length) {
                                                             var procName = processes[selIdx];
                                                             var pid = audioCore.availableProcesses[procName];
