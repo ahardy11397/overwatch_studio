@@ -4213,6 +4213,9 @@ Window {
                         }}
 
     }
+            }
+        }
+    }
 
 
 
@@ -8417,6 +8420,7 @@ Window {
         }
 
     }
+    }
 
     // --- INLINE ROUTE CONTROLLER POPUP ---
     Rectangle {
@@ -8575,8 +8579,3 @@ Window {
     }
 
 }
-
-
-}
-
-}}}
