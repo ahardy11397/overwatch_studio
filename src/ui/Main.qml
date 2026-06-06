@@ -7855,7 +7855,7 @@ Window {
                         clip: true
 
                         ColumnLayout {
-                            width: rightPanel.width - 25
+                            width: Math.max(rightPanel.width - 25, implicitWidth)
                             spacing: 12
 
                             Text {
@@ -7905,6 +7905,7 @@ Window {
                                 id: inputPatchPanel
                                 visible: patchBoardScrollView.patchSubTab === 0
                                 Layout.fillWidth: true
+                                implicitWidth: inputPatchLayout.implicitWidth + 24
                                 implicitHeight: inputPatchLayout.implicitHeight + 24
                                 color: "#0a0c10"
                                 radius: 8
@@ -8167,6 +8168,7 @@ Window {
                             Rectangle {
                                 visible: patchBoardScrollView.patchSubTab === 1
                                 Layout.fillWidth: true
+                                implicitWidth: routingMatrixLayout.implicitWidth + 24
                                 implicitHeight: routingMatrixLayout.implicitHeight + 24
                                 color: "#0a0c10"
                                 radius: 8
@@ -8339,6 +8341,7 @@ Window {
                             Rectangle {
                                 visible: patchBoardScrollView.patchSubTab === 2
                                 Layout.fillWidth: true
+                                implicitWidth: outputPatchLayout.implicitWidth + 24
                                 implicitHeight: outputPatchLayout.implicitHeight + 24
                                 color: "#0a0c10"
                                 radius: 8
