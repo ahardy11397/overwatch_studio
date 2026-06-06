@@ -43,6 +43,7 @@ class AudioEngineBridge : public QObject {
     Q_PROPERTY(bool undoActive READ undoActive NOTIFY undoActiveChanged)
     Q_PROPERTY(QVariantList availableDrivers READ availableDrivers CONSTANT)
     Q_PROPERTY(QVariantList availableDevices READ availableDevices CONSTANT)
+    Q_PROPERTY(QVariantList captureDevices READ getCaptureDevices CONSTANT)
     Q_PROPERTY(int activeSampleRate READ activeSampleRate WRITE setActiveSampleRate NOTIFY deviceSettingsChanged)
     Q_PROPERTY(int activeBufferSize READ activeBufferSize WRITE setActiveBufferSize NOTIFY deviceSettingsChanged)
     Q_PROPERTY(QVariantMap availableProcesses READ availableProcesses NOTIFY processesChanged)
@@ -164,6 +165,7 @@ public:
 
     QVariantList availableDrivers() const { return { "ASIO (Low-Latency)", "WASAPI Shared", "DirectSound" }; }
     QVariantList availableDevices() const { return { "Dante Virtual Soundcard", "ASIO Focusrite USB", "Built-in Sound Device" }; }
+    QVariantList getCaptureDevices() const;
     int activeSampleRate() const { return m_activeSampleRate; }
     void setActiveSampleRate(int rate);
     int activeBufferSize() const { return m_activeBufferSize; }

@@ -171,26 +171,28 @@ AudioEngineBridge::AudioEngineBridge(QObject* parent)
                 }
             }
 
-            // 2. Read capture buffers
-            size_t numCaptureDevices = m_captureWorkers.size();
-            for (size_t d = 0; d < numCaptureDevices && d < 8; ++d) {
-                float* ch0Buf = &inputBuffers[(2 * d) * 256];
-                float* ch1Buf = &inputBuffers[(2 * d + 1) * 256];
-                
-                m_captureWorkers[d]->readCapturedSamples(ch0Buf, 256);
-                std::copy(ch0Buf, ch0Buf + 256, ch1Buf);
-            }
-
-            size_t firstRemainingChannel = 2 * numCaptureDevices;
-            for (size_t ch = firstRemainingChannel; ch < 24; ++ch) {
-                float* chBuf = &inputBuffers[ch * 256];
-                for (size_t s = 0; s < 256; ++s) {
-                    float t = static_cast<float>(sampleCounter + s) / 48000.0f;
-                    float lfo = 0.5f + 0.5f * std::sin(2.0f * 3.14159f * 0.2f * t);
-                    float freq = 440.0f + ch * 20.0f;
-                    float sig = std::sin(2.0f * 3.14159f * freq * t) * lfo;
-                    float whiteNoise = (((rand() % 2000) / 1000.0f) - 1.0f) * 0.05f;
-                    chBuf[s] = (sig * 0.25f) + whiteNoise;
+            // 2. Read capture buffers for patched hardware channels
+            for (size_t ch = 0; ch < 24; ++ch) {
+                if (m_uiInputPatches[ch].type == 1) {
+                    int encoded = m_uiInputPatches[ch].index;
+                    int devIdx = encoded >> 8;
+                    int chanIdx = encoded & 0xFF;
+                    if (devIdx >= 0 && devIdx < static_cast<int>(m_captureWorkers.size())) {
+                        m_captureWorkers[devIdx]->readCapturedSamples(chanIdx, &inputBuffers[ch * 256], 256);
+                    } else {
+                        std::fill_n(&inputBuffers[ch * 256], 256, 0.0f);
+                    }
+                } else {
+                    // Fallback to test generator signal for unpatched/generator/other channels
+                    float* chBuf = &inputBuffers[ch * 256];
+                    for (size_t s = 0; s < 256; ++s) {
+                        float t = static_cast<float>(sampleCounter + s) / 48000.0f;
+                        float lfo = 0.5f + 0.5f * std::sin(2.0f * 3.14159f * 0.2f * t);
+                        float freq = 440.0f + ch * 20.0f;
+                        float sig = std::sin(2.0f * 3.14159f * freq * t) * lfo;
+                        float whiteNoise = (((rand() % 2000) / 1000.0f) - 1.0f) * 0.05f;
+                        chBuf[s] = (sig * 0.25f) + whiteNoise;
+                    }
                 }
             }
 
@@ -899,18 +901,31 @@ QVariantList AudioEngineBridge::getActivePatches() const {
     return res;
 }
 
+QVariantList AudioEngineBridge::getCaptureDevices() const {
+    QVariantList list;
+    for (const auto& w : m_captureWorkers) {
+        QVariantMap map;
+        map["deviceName"] = QString::fromStdWString(w->getDeviceName());
+        map["channels"] = w->getChannelCount();
+        list.append(map);
+    }
+    return list;
+}
+
 void AudioEngineBridge::setInputPatch(int channelIdx, int type, int index) {
     if (channelIdx < 0 || channelIdx >= m_uiInputPatches.size()) {
         return;
     }
     m_uiInputPatches[channelIdx].type = type;
     m_uiInputPatches[channelIdx].index = index;
+    
+    uint32_t dspIndex = (type == 1) ? static_cast<uint32_t>(channelIdx) : static_cast<uint32_t>(index);
     pushCommand(RoutingCommand{
         RoutingCommandType::SetInputPatch,
         static_cast<uint32_t>(channelIdx),
         static_cast<uint32_t>(type),
         0.0f,
-        static_cast<uint32_t>(index)
+        dspIndex
     });
     emit patchesChanged();
 }
