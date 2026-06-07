@@ -125,106 +125,6 @@ AudioEngineBridge::AudioEngineBridge(QObject* parent)
     m_engine = std::make_unique<AudioEngineCore>();
     m_engine->setRecorder(m_recorderManager.get());
 
-    m_running = true;
-    m_simulatedAudioThread = std::jthread([this](std::stop_token stopToken) {
-        // Set Windows timer resolution to 1ms for high-precision sleep
-        timeBeginPeriod(1);
-
-        std::vector<float> inputBuffers(24 * 256, 0.0f);
-        std::vector<float> outputBuffers(8 * 256, 0.0f);
-        std::vector<const float*> inputPtrs(24);
-        for (size_t ch = 0; ch < 24; ++ch) {
-            inputPtrs[ch] = &inputBuffers[ch * 256];
-        }
-        std::vector<float*> outputPtrs(8);
-        for (size_t ch = 0; ch < 8; ++ch) {
-            outputPtrs[ch] = &outputBuffers[ch * 256];
-        }
-        
-        size_t sampleCounter = 0;
-        auto nextFrameTime = std::chrono::steady_clock::now();
-        const auto frameDuration = std::chrono::microseconds(5333); // 256 samples @ 48kHz
-
-        while (!stopToken.stop_requested() && m_running.load()) {
-            // 1. Thread pacing
-            if (!m_captureWorkers.empty()) {
-                // Active Capture: block until we have at least 256 samples captured
-                size_t buffered = m_captureWorkers[0]->getBufferedSampleCount();
-                if (buffered < 256) {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                    continue;
-                }
-            } else {
-                // Silent/Mock Pacing: Sleep/Yield precisely for 5.333ms frame intervals
-                nextFrameTime += frameDuration;
-                auto now = std::chrono::steady_clock::now();
-                if (now < nextFrameTime) {
-                    auto sleepTime = std::chrono::duration_cast<std::chrono::milliseconds>(nextFrameTime - now);
-                    if (sleepTime.count() > 1) {
-                        std::this_thread::sleep_for(sleepTime - std::chrono::milliseconds(1));
-                    }
-                    while (std::chrono::steady_clock::now() < nextFrameTime) {
-                        std::this_thread::yield();
-                    }
-                } else if (now - nextFrameTime > std::chrono::milliseconds(100)) {
-                    nextFrameTime = now;
-                }
-            }
-
-            // 2. Read capture buffers for patched hardware channels
-            for (size_t ch = 0; ch < 24; ++ch) {
-                if (m_uiInputPatches[ch].type == 1) {
-                    int encoded = m_uiInputPatches[ch].index;
-                    int devIdx = encoded >> 8;
-                    int chanIdx = encoded & 0xFF;
-                    if (devIdx >= 0 && devIdx < static_cast<int>(m_captureWorkers.size())) {
-                        m_captureWorkers[devIdx]->readCapturedSamples(chanIdx, &inputBuffers[ch * 256], 256);
-                    } else {
-                        std::fill_n(&inputBuffers[ch * 256], 256, 0.0f);
-                    }
-                } else {
-                    // Fallback to test generator signal for unpatched/generator/other channels
-                    float* chBuf = &inputBuffers[ch * 256];
-                    for (size_t s = 0; s < 256; ++s) {
-                        float t = static_cast<float>(sampleCounter + s) / 48000.0f;
-                        float lfo = 0.5f + 0.5f * std::sin(2.0f * 3.14159f * 0.2f * t);
-                        float freq = 440.0f + ch * 20.0f;
-                        float sig = std::sin(2.0f * 3.14159f * freq * t) * lfo;
-                        float whiteNoise = (((rand() % 2000) / 1000.0f) - 1.0f) * 0.05f;
-                        chBuf[s] = (sig * 0.25f) + whiteNoise;
-                    }
-                }
-            }
-
-            sampleCounter += 256;
-            if (sampleCounter >= 48000 * 60) {
-                sampleCounter = 0;
-            }
-            SystemWatchdog::getInstance().registerAudioCallback();
-            
-            if (m_engine) {
-                m_engine->audioDeviceIOCallbackWithContext(
-                    inputPtrs.data(), 24,
-                    outputPtrs.data(), 8,
-                    256, nullptr
-                );
-            }
-
-            // 3. Write render buffers
-            size_t numRenderDevices = m_renderWorkers.size();
-            for (size_t r = 0; r < numRenderDevices && r < 4; ++r) {
-                const float* ch0Buf = &outputBuffers[(2 * r) * 256];
-                const float* ch1Buf = &outputBuffers[(2 * r + 1) * 256];
-                std::vector<float> mixBuffer(256);
-                for (size_t s = 0; s < 256; ++s) {
-                    mixBuffer[s] = (ch0Buf[s] + ch1Buf[s]) * 0.5f;
-                }
-                m_renderWorkers[r]->writeRenderSamples(mixBuffer.data(), 256);
-            }
-        }
-        
-        timeEndPeriod(1);
-    });
 
     // Start the universal control surface server engines
     ExternalControlSurfaceManager::getInstance().start();
@@ -377,6 +277,108 @@ AudioEngineBridge::AudioEngineBridge(QObject* parent)
     }
 
     refreshProcessesAsync();
+
+    m_running = true;
+    m_simulatedAudioThread = std::jthread([this](std::stop_token stopToken) {
+        // Set Windows timer resolution to 1ms for high-precision sleep
+        timeBeginPeriod(1);
+
+        std::vector<float> inputBuffers(24 * 256, 0.0f);
+        std::vector<float> outputBuffers(8 * 256, 0.0f);
+        std::vector<const float*> inputPtrs(24);
+        for (size_t ch = 0; ch < 24; ++ch) {
+            inputPtrs[ch] = &inputBuffers[ch * 256];
+        }
+        std::vector<float*> outputPtrs(8);
+        for (size_t ch = 0; ch < 8; ++ch) {
+            outputPtrs[ch] = &outputBuffers[ch * 256];
+        }
+        
+        size_t sampleCounter = 0;
+        auto nextFrameTime = std::chrono::steady_clock::now();
+        const auto frameDuration = std::chrono::microseconds(5333); // 256 samples @ 48kHz
+
+        while (!stopToken.stop_requested() && m_running.load()) {
+            // 1. Thread pacing
+            if (!m_captureWorkers.empty()) {
+                // Active Capture: block until we have at least 256 samples captured
+                size_t buffered = m_captureWorkers[0]->getBufferedSampleCount();
+                if (buffered < 256) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                    continue;
+                }
+            } else {
+                // Silent/Mock Pacing: Sleep/Yield precisely for 5.333ms frame intervals
+                nextFrameTime += frameDuration;
+                auto now = std::chrono::steady_clock::now();
+                if (now < nextFrameTime) {
+                    auto sleepTime = std::chrono::duration_cast<std::chrono::milliseconds>(nextFrameTime - now);
+                    if (sleepTime.count() > 1) {
+                        std::this_thread::sleep_for(sleepTime - std::chrono::milliseconds(1));
+                    }
+                    while (std::chrono::steady_clock::now() < nextFrameTime) {
+                        std::this_thread::yield();
+                    }
+                } else if (now - nextFrameTime > std::chrono::milliseconds(100)) {
+                    nextFrameTime = now;
+                }
+            }
+
+            // 2. Read capture buffers for patched hardware channels
+            for (size_t ch = 0; ch < 24; ++ch) {
+                if (m_uiInputPatches[ch].type == 1) {
+                    int encoded = m_uiInputPatches[ch].index;
+                    int devIdx = encoded >> 8;
+                    int chanIdx = encoded & 0xFF;
+                    if (devIdx >= 0 && devIdx < static_cast<int>(m_captureWorkers.size())) {
+                        m_captureWorkers[devIdx]->readCapturedSamples(chanIdx, &inputBuffers[ch * 256], 256);
+                    } else {
+                        std::fill_n(&inputBuffers[ch * 256], 256, 0.0f);
+                    }
+                } else {
+                    // Fallback to test generator signal for unpatched/generator/other channels
+                    float* chBuf = &inputBuffers[ch * 256];
+                    for (size_t s = 0; s < 256; ++s) {
+                        float t = static_cast<float>(sampleCounter + s) / 48000.0f;
+                        float lfo = 0.5f + 0.5f * std::sin(2.0f * 3.14159f * 0.2f * t);
+                        float freq = 440.0f + ch * 20.0f;
+                        float sig = std::sin(2.0f * 3.14159f * freq * t) * lfo;
+                        float whiteNoise = (((rand() % 2000) / 1000.0f) - 1.0f) * 0.05f;
+                        chBuf[s] = (sig * 0.25f) + whiteNoise;
+                    }
+                }
+            }
+
+            sampleCounter += 256;
+            if (sampleCounter >= 48000 * 60) {
+                sampleCounter = 0;
+            }
+            SystemWatchdog::getInstance().registerAudioCallback();
+
+            // 3. Process DSP block
+            if (m_engine) {
+                m_engine->audioDeviceIOCallbackWithContext(
+                    inputPtrs.data(), 24,
+                    outputPtrs.data(), 8,
+                    256, nullptr
+                );
+            }
+
+            // 3. Write render buffers
+            size_t numRenderDevices = m_renderWorkers.size();
+            for (size_t r = 0; r < numRenderDevices && r < 4; ++r) {
+                const float* ch0Buf = &outputBuffers[(2 * r) * 256];
+                const float* ch1Buf = &outputBuffers[(2 * r + 1) * 256];
+                std::vector<float> mixBuffer(256);
+                for (size_t s = 0; s < 256; ++s) {
+                    mixBuffer[s] = (ch0Buf[s] + ch1Buf[s]) * 0.5f;
+                }
+                m_renderWorkers[r]->writeRenderSamples(mixBuffer.data(), 256);
+            }
+        }
+        
+        timeEndPeriod(1);
+    });
 }
 
 AudioEngineBridge::~AudioEngineBridge() {
