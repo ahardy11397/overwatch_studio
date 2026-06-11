@@ -1,4 +1,5 @@
 #include "VideoCanvasMock.h"
+#include "LocalMediaDeck.h"
 #include "../core/control/PanicSwitch.h"
 #include <QBrush>
 #include <QColor>
@@ -130,6 +131,40 @@ void VideoCanvasMock::paint(QPainter* painter) {
     painter->setPen(QPen(QColor("#252b36"), 2));
     painter->drawLine(halfW, 0, halfW, h);
     painter->drawLine(0, halfH, w, halfH);
+
+    // 4. Draw floating PiP monitor for Media Deck Out
+    if (m_mediaDeck != nullptr && (m_programCamera == 4 || m_previewCamera == 4)) {
+        QRectF mediaRect(halfW - 120, h - 110, 240, 100);
+        
+        // Generate frame
+        QImage mediaFrame;
+        m_mediaDeck->generateVideoFrame(mediaFrame, m_frameCount, 240, 100);
+        painter->drawImage(mediaRect, mediaFrame);
+        
+        // Draw border based on selected PGM/PVW
+        if (m_programCamera == 4) {
+            painter->setPen(QPen(QColor("#ff3b30"), 3)); // Red PGM
+        } else {
+            painter->setPen(QPen(QColor("#30d158"), 3)); // Green PVW
+        }
+        painter->drawRect(mediaRect);
+        
+        // Label
+        painter->setPen(QColor("#ffffff"));
+        QFont labelFont = painter->font();
+        labelFont.setBold(true);
+        labelFont.setPixelSize(10);
+        painter->setFont(labelFont);
+        painter->drawText(mediaRect.adjusted(8, 8, -8, -8), Qt::AlignTop | Qt::AlignLeft, "MEDIA DECK OUT");
+    }
+}
+
+void VideoCanvasMock::setMediaDeck(LocalMediaDeck* deck) {
+    if (m_mediaDeck != deck) {
+        m_mediaDeck = deck;
+        emit mediaDeckChanged();
+        update();
+    }
 }
 
 void VideoCanvasMock::updateFrame() {

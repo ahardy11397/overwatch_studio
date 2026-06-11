@@ -1,5 +1,6 @@
 // Touch for Task 1: Summing Engine & C++ Device Selector
 #include "AudioEngineBridge.h"
+#include "LocalMediaDeck.h"
 #include <windows.h>
 #include <tlhelp32.h>
 #include <timeapi.h>
@@ -124,6 +125,8 @@ AudioEngineBridge::AudioEngineBridge(QObject* parent)
     m_recorderManager->initialize(24, "recording_session_" + QDateTime::currentDateTime().toString("yyyy-MM-dd_hhmmss").toStdString());
     m_engine = std::make_unique<AudioEngineCore>();
     m_engine->setRecorder(m_recorderManager.get());
+    m_mediaDeck = std::make_unique<LocalMediaDeck>(this);
+    m_engine->setMediaDeck(m_mediaDeck.get());
 
 
     // Start the universal control surface server engines
@@ -332,6 +335,12 @@ AudioEngineBridge::AudioEngineBridge(QObject* parent)
                     int chanIdx = encoded & 0xFF;
                     if (devIdx >= 0 && devIdx < static_cast<int>(m_captureWorkers.size())) {
                         m_captureWorkers[devIdx]->readCapturedSamples(chanIdx, &inputBuffers[ch * 256], 256);
+                    } else {
+                        std::fill_n(&inputBuffers[ch * 256], 256, 0.0f);
+                    }
+                } else if (m_uiInputPatches[ch].type == 4) { // Media
+                    if (m_mediaDeck != nullptr) {
+                        m_mediaDeck->readPlaybackSamples(m_uiInputPatches[ch].index, &inputBuffers[ch * 256], 256);
                     } else {
                         std::fill_n(&inputBuffers[ch * 256], 256, 0.0f);
                     }

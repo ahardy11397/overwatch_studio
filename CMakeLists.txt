@@ -97,6 +97,8 @@ add_executable(AudioEngineTests
     src/core/audio/WASAPIDeviceWorker.h
     src/core/audio/WindowsProcessCapture.cpp
     src/core/audio/WindowsProcessCapture.h
+    src/ui/LocalMediaDeck.cpp
+    src/ui/LocalMediaDeck.h
 )
 target_link_libraries(AudioEngineTests PRIVATE
     overwatch_engine
@@ -108,6 +110,8 @@ target_link_libraries(AudioEngineTests PRIVATE
     simdjson::simdjson
     ole32
     mmdevapi
+    Qt6::Core
+    Qt6::Gui
 )
 add_test(NAME AudioEngineTests COMMAND AudioEngineTests)
 
@@ -125,6 +129,8 @@ add_executable(overwatch_studio
     src/core/audio/WindowsProcessCapture.h
     src/core/audio/WASAPIDeviceWorker.cpp
     src/core/audio/WASAPIDeviceWorker.h
+    src/ui/LocalMediaDeck.cpp
+    src/ui/LocalMediaDeck.h
 )
 
 qt_add_qml_module(overwatch_studio

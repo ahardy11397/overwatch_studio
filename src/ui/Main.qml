@@ -4251,7 +4251,7 @@ Window {
 
 
 
-        RowLayout {
+        ColumnLayout {
 
             anchors.fill: parent
 
@@ -4259,9 +4259,15 @@ Window {
 
             spacing: 15
 
+            RowLayout {
 
+                Layout.fillWidth: true
 
-            // Left Pane (70%): High-FPS 2x2 camera grid
+                Layout.fillHeight: true
+
+                spacing: 15
+
+                // Left Pane (70%): High-FPS 2x2 camera grid
 
             Rectangle {
 
@@ -4318,6 +4324,8 @@ Window {
                         programCamera: programCameraIdx
 
                         previewCamera: previewCameraIdx
+
+                        mediaDeck: audioCore.mediaDeck
 
                     }
 
@@ -4411,7 +4419,7 @@ Window {
 
                                 anchors.centerIn: parent
 
-                                text: "PROGRAM [PGM]: CAM " + (programCameraIdx + 1)
+                                text: "PROGRAM [PGM]: " + (programCameraIdx === 4 ? "MEDIA" : "CAM " + (programCameraIdx + 1))
 
                                 color: "#ffffff"
 
@@ -4441,7 +4449,7 @@ Window {
 
                                 anchors.centerIn: parent
 
-                                text: "PREVIEW [PVW]: CAM " + (previewCameraIdx + 1)
+                                text: "PREVIEW [PVW]: " + (previewCameraIdx === 4 ? "MEDIA" : "CAM " + (previewCameraIdx + 1))
 
                                 color: "#ffffff"
 
@@ -4487,7 +4495,7 @@ Window {
 
                             Repeater {
 
-                                model: 4
+                                model: 5
 
                                 delegate: Button {
 
@@ -4517,7 +4525,7 @@ Window {
 
                                     contentItem: Text {
 
-                                        text: "CAM " + (index + 1)
+                                        text: index === 4 ? "MEDIA" : "CAM " + (index + 1)
 
                                         color: pgmBtn.checked ? "#ffffff" : "#8a8d98"
 
@@ -4579,7 +4587,7 @@ Window {
 
                             Repeater {
 
-                                model: 4
+                                model: 5
 
                                 delegate: Button {
 
@@ -4609,7 +4617,7 @@ Window {
 
                                     contentItem: Text {
 
-                                        text: "CAM " + (index + 1)
+                                        text: index === 4 ? "MEDIA" : "CAM " + (index + 1)
 
                                         color: pvwBtn.checked ? "#ffffff" : "#8a8d98"
 
@@ -4927,7 +4935,128 @@ Window {
 
         }
 
+        // --- LOCAL MEDIA DECK CONTROL PANEL ---
+        Rectangle {
+            id: mediaDeckPanel
+            Layout.fillWidth: true
+            height: 90
+            color: "#161920"
+            border.color: "#252b36"
+            border.width: 1
+            radius: 8
+            
+            RowLayout {
+                anchors.fill: parent
+                anchors.margins: 12
+                spacing: 15
+                
+                // Playback Status Indicator
+                ColumnLayout {
+                    spacing: 2
+                    Text {
+                        text: "LOCAL MEDIA DECK"
+                        color: "#00bdd6"
+                        font.pixelSize: 10
+                        font.bold: true
+                        font.letterSpacing: 1.0
+                    }
+                    Text {
+                        text: audioCore.mediaDeck.playing ? "STATE: PLAYING" : "STATE: PAUSED"
+                        color: audioCore.mediaDeck.playing ? "#30d158" : "#8a8d98"
+                        font.pixelSize: 9
+                        font.bold: true
+                    }
+                }
+                
+                // Load / File selection
+                ColumnLayout {
+                    Layout.preferredWidth: 200
+                    spacing: 4
+                    Text {
+                        text: audioCore.mediaDeck.filePath === "" ? "No file loaded" : audioCore.mediaDeck.filePath
+                        color: "#ffffff"
+                        font.pixelSize: 10
+                        elide: Text.ElideMiddle
+                    }
+                    RowLayout {
+                        spacing: 6
+                        Button {
+                            implicitHeight: 24
+                            text: "Load Clip"
+                            onClicked: {
+                                audioCore.mediaDeck.load("clip_show_intro_1080p.mp4");
+                            }
+                        }
+                        Button {
+                            implicitHeight: 24
+                            text: "Load Audio"
+                            onClicked: {
+                                audioCore.mediaDeck.load("bg_music_track.wav");
+                            }
+                        }
+                    }
+                }
+                
+                // Playback Controls
+                RowLayout {
+                    spacing: 8
+                    Button {
+                        text: "▶"
+                        implicitWidth: 32
+                        implicitHeight: 32
+                        onClicked: audioCore.mediaDeck.play()
+                    }
+                    Button {
+                        text: "▮▮"
+                        implicitWidth: 32
+                        implicitHeight: 32
+                        onClicked: audioCore.mediaDeck.pause()
+                    }
+                    Button {
+                        text: "■"
+                        implicitWidth: 32
+                        implicitHeight: 32
+                        onClicked: audioCore.mediaDeck.stop()
+                    }
+                }
+                
+                // Progress Slider & Timecode
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 2
+                    RowLayout {
+                        Text {
+                            function formatTC(secs) {
+                                var m = Math.floor(secs / 60);
+                                var s = secs % 60;
+                                return (m < 10 ? "0" + m : m) + ":" + (s < 10 ? "0" + s : s);
+                            }
+                            text: formatTC(audioCore.mediaDeck.position) + " / " + formatTC(audioCore.mediaDeck.duration)
+                            color: "#a1a1aa"
+                            font.pixelSize: 9
+                            font.bold: true
+                        }
+                        Item { Layout.fillWidth: true }
+                        CheckBox {
+                            text: "Loop"
+                            checked: audioCore.mediaDeck.loop
+                            onCheckedChanged: audioCore.mediaDeck.loop = checked
+                        }
+                    }
+                    Slider {
+                        Layout.fillWidth: true
+                        from: 0
+                        to: audioCore.mediaDeck.duration
+                        value: audioCore.mediaDeck.position
+                        onMoved: audioCore.mediaDeck.position = value
+                    }
+                }
+            }
+        }
+
     }
+
+}
 
 
 

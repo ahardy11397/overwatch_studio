@@ -11,7 +11,8 @@ enum class AudioSourceType : uint8_t {
     None = 0,
     Hardware = 1,
     Generator = 2,
-    AppCapture = 3
+    AppCapture = 3,
+    Media = 4
 };
 
 struct AudioSourcePatch {

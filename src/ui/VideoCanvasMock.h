@@ -4,9 +4,7 @@
 #include <QPainter>
 #include <QTimer>
 #include <array>
-#include <QImage>
-
-
+#include "LocalMediaDeck.h"
 /**
  * @class VideoCanvasMock
  * @brief Serves as a placeholder for the native D3D11 zero-copy video renderer.
@@ -15,6 +13,7 @@ class VideoCanvasMock : public QQuickPaintedItem {
     Q_OBJECT
     Q_PROPERTY(int programCamera READ programCamera WRITE setProgramCamera NOTIFY programCameraChanged)
     Q_PROPERTY(int previewCamera READ previewCamera WRITE setPreviewCamera NOTIFY previewCameraChanged)
+    Q_PROPERTY(LocalMediaDeck* mediaDeck READ mediaDeck WRITE setMediaDeck NOTIFY mediaDeckChanged)
 
 public:
     explicit VideoCanvasMock(QQuickItem* parent = nullptr);
@@ -38,9 +37,13 @@ public:
         }
     }
 
+    LocalMediaDeck* mediaDeck() const { return m_mediaDeck; }
+    void setMediaDeck(LocalMediaDeck* deck);
+
 signals:
     void programCameraChanged();
     void previewCameraChanged();
+    void mediaDeckChanged();
 
 private slots:
     void updateFrame();
@@ -51,5 +54,6 @@ private:
     int m_programCamera = 0; // Default: Cam 1
     int m_previewCamera = 1; // Default: Cam 2
     std::array<QImage, 4> m_cameraImages;
+    LocalMediaDeck* m_mediaDeck = nullptr;
 };
 

@@ -13,6 +13,7 @@
 #include "LookAheadLimiter.h"
 #include "AudioRecorderManager.h"
 #include "../control/RealtimeLogger.h"
+#include "../../ui/LocalMediaDeck.h"
 #include <span>
 #include <vector>
 #include <memory>
@@ -120,6 +121,8 @@ public:
     void setMasterVolume(float vol) noexcept { masterVolume.store(vol, std::memory_order_relaxed); }
     void setMasterMuted(bool mute) noexcept { masterMuted.store(mute, std::memory_order_relaxed); }
 
+    void setMediaDeck(LocalMediaDeck* deck) noexcept { m_mediaDeck = deck; }
+
     void setInputPatch(uint32_t channelIdx, AudioSourceType type, uint32_t index) noexcept {
         if (channelIdx < 24) {
             inputPatchMap[channelIdx] = AudioSourcePatch{type, index};
@@ -194,7 +197,7 @@ public:
             const auto& cmd = *cmdOpt;
             switch (cmd.type) {
                 case RoutingCommandType::SetInputPatch:
-                    if (cmd.targetIdx <= static_cast<uint32_t>(AudioSourceType::AppCapture)) {
+                    if (cmd.targetIdx <= static_cast<uint32_t>(AudioSourceType::Media)) {
                         setInputPatch(cmd.channelIdx, static_cast<AudioSourceType>(cmd.targetIdx), cmd.flag);
                     }
                     break;
@@ -330,6 +333,12 @@ public:
                             break;
                         }
                     }
+                }
+            } else if (patch.type == AudioSourceType::Media) {
+                if (m_mediaDeck != nullptr) {
+                    m_mediaDeck->readPlaybackSamples(patch.index, dest, samples);
+                } else {
+                    std::fill_n(dest, samples, 0.0f);
                 }
             } else {
                 std::fill_n(dest, samples, 0.0f);
@@ -550,6 +559,7 @@ private:
     std::atomic<bool> masterMuted{false};
 
     AudioRecorderManager* m_recorder = nullptr;
+    LocalMediaDeck* m_mediaDeck = nullptr;
     std::atomic<bool> m_recordingArmed{false};
     bool m_wasRecordingArmed = false;
     std::array<AudioRecordBlock, InputChannelsCount> m_recordBlocks{};

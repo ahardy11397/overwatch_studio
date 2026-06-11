@@ -14,6 +14,7 @@
 #include "../core/audio/WindowsProcessCapture.h"
 #include "../core/audio/AudioRecorderManager.h"
 #include "../core/audio/WASAPIDeviceWorker.h"
+#include "LocalMediaDeck.h"
 #include <memory>
 #include <vector>
 
@@ -44,6 +45,7 @@ class AudioEngineBridge : public QObject {
     Q_PROPERTY(QVariantList availableDrivers READ availableDrivers CONSTANT)
     Q_PROPERTY(QVariantList availableDevices READ availableDevices CONSTANT)
     Q_PROPERTY(QVariantList captureDevices READ getCaptureDevices CONSTANT)
+    Q_PROPERTY(LocalMediaDeck* mediaDeck READ mediaDeck CONSTANT)
     Q_PROPERTY(int activeSampleRate READ activeSampleRate WRITE setActiveSampleRate NOTIFY deviceSettingsChanged)
     Q_PROPERTY(int activeBufferSize READ activeBufferSize WRITE setActiveBufferSize NOTIFY deviceSettingsChanged)
     Q_PROPERTY(QVariantMap availableProcesses READ availableProcesses NOTIFY processesChanged)
@@ -166,6 +168,7 @@ public:
     QVariantList availableDrivers() const { return { "ASIO (Low-Latency)", "WASAPI Shared", "DirectSound" }; }
     QVariantList availableDevices() const { return { "Dante Virtual Soundcard", "ASIO Focusrite USB", "Built-in Sound Device" }; }
     QVariantList getCaptureDevices() const;
+    LocalMediaDeck* mediaDeck() const { return m_mediaDeck.get(); }
     int activeSampleRate() const { return m_activeSampleRate; }
     void setActiveSampleRate(int rate);
     int activeBufferSize() const { return m_activeBufferSize; }
@@ -468,6 +471,7 @@ private:
     std::jthread m_processListThread;
 
     std::unique_ptr<AudioEngineCore> m_engine;
+    std::unique_ptr<LocalMediaDeck> m_mediaDeck;
     std::unique_ptr<AudioRecorderManager> m_recorderManager;
     std::array<std::unique_ptr<WindowsProcessCapture>, 32> m_processCaptures;
     std::vector<std::unique_ptr<WASAPIDeviceWorker>> m_captureWorkers;

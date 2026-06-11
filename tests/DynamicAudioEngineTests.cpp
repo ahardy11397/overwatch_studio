@@ -530,6 +530,78 @@ TEST(WindowsProcessCaptureTest, VerifyCaptureLifecycleAndQueuePush) {
     }
 }
 
+#include "ui/LocalMediaDeck.h"
+
+TEST(LocalMediaDeckTest, PlaybackControlsAndState) {
+    LocalMediaDeck deck;
+    EXPECT_FALSE(deck.isPlaying());
+    EXPECT_EQ(deck.position(), 0);
+    
+    deck.play();
+    EXPECT_TRUE(deck.isPlaying());
+    
+    deck.setPosition(50);
+    EXPECT_EQ(deck.position(), 50);
+    EXPECT_NEAR(deck.playbackProgress(), 50.0 / 120.0, 1e-5);
+    
+    deck.pause();
+    EXPECT_FALSE(deck.isPlaying());
+    EXPECT_EQ(deck.position(), 50);
+    
+    deck.stop();
+    EXPECT_FALSE(deck.isPlaying());
+    EXPECT_EQ(deck.position(), 0);
+    
+    deck.load("test_track.wav");
+    EXPECT_EQ(deck.filePath().toStdString(), "test_track.wav");
+    EXPECT_GT(deck.duration(), 0);
+}
+
+TEST(LocalMediaDeckTest, VerifyMediaPatchAudioStreaming) {
+    auto core = std::make_unique<AudioEngineCore>();
+    core->configureEngine(24, 8, 8, 8);
+    LocalMediaDeck deck;
+    core->setMediaDeck(&deck);
+    
+    // Patch channel 0 to Media Deck
+    core->setInputPatch(0, AudioSourceType::Media, 0); // 0 = Left channel
+    // Route channel 0 to Bus 0 (MST L)
+    core->setRoute(0, 0, 1.0f, TapPoint::PostFader);
+    // Patch Output Port 0 to Bus 0
+    core->setOutputPatch(0, 0);
+    
+    // Set fader gain to 0dB (1.0f) and unmute
+    core->getChannelPool()[0].setFaderLinear(1.0f);
+    core->getChannelPool()[0].setMuted(false);
+    
+    // Setup 8 output buffers to match engine active output channels
+    std::vector<std::vector<float>> outputBuffers(8, std::vector<float>(256, 0.0f));
+    std::vector<float*> outputPtrs(8);
+    for (size_t i = 0; i < 8; ++i) {
+        outputPtrs[i] = outputBuffers[i].data();
+    }
+    
+    // Initially paused, output should be silent
+    core->audioDeviceIOCallbackWithContext(nullptr, 0, outputPtrs.data(), 8, 256, nullptr);
+    for (float val : outputBuffers[0]) {
+        EXPECT_NEAR(val, 0.0f, 1e-5f);
+    }
+    
+    // Start play, output should contain synth pad signal
+    deck.play();
+    core->audioDeviceIOCallbackWithContext(nullptr, 0, outputPtrs.data(), 8, 256, nullptr);
+    
+    bool hasSignal = false;
+    for (float val : outputBuffers[0]) {
+        if (std::abs(val) > 0.01f) {
+            hasSignal = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(hasSignal);
+}
+
+
 
 
 
