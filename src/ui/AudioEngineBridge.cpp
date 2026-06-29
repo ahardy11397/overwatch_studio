@@ -224,7 +224,7 @@ AudioEngineBridge::AudioEngineBridge(QObject* parent)
     for (int i = 0; i < 24; ++i) {
         InputPatchUI patch;
         patch.channelIdx = i;
-        if (i < 16) {
+        if (i < 8) {
             patch.type = 1; // HW
             patch.index = i;
         } else {
@@ -261,8 +261,8 @@ AudioEngineBridge::AudioEngineBridge(QObject* parent)
     for (int i = 0; i < 24; ++i) m_channelPeaks.append(0.0);
     for (int i = 0; i < 8; ++i) m_busPeaks.append(0.0);
 
-    // Setup default startup routes: route all 24 channels to Bus 0 (MST L) and Bus 1 (MST R) post-fader
-    for (int i = 0; i < 24; ++i) {
+    // Setup default startup routes: route all 8 channels to Bus 0 (MST L) and Bus 1 (MST R) post-fader
+    for (int i = 0; i < 8; ++i) {
         m_uiRoutes.append({i, 0, 1.0, 2});
         m_uiRoutes.append({i, 1, 1.0, 2});
         pushCommand(RoutingCommand{
@@ -279,6 +279,11 @@ AudioEngineBridge::AudioEngineBridge(QObject* parent)
             1.0f,
             2
         });
+    }
+
+    // Beta default: 8 input channels, 2 buses (Master L/R), 0 auxes, 8 DCAs
+    if (m_engine) {
+        m_engine->configureEngine(8, 2, 0, 8);
     }
 
     refreshProcessesAsync();
