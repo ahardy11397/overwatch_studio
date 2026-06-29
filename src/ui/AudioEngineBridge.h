@@ -163,6 +163,8 @@ public:
 
     Q_INVOKABLE void armRecording(bool armed);
     Q_INVOKABLE void triggerRecording(bool active);
+    Q_INVOKABLE void startRecordingTo(const QString& directory);
+    Q_INVOKABLE void stopRecording();
     Q_INVOKABLE void configureShowChannels(int numInputs, int numBuses, int numAuxes, int numDCAs);
 
     QVariantList availableDrivers() const { return { "ASIO (Low-Latency)", "WASAPI Shared", "DirectSound" }; }

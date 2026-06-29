@@ -1220,6 +1220,45 @@ void AudioEngineBridge::triggerRecording(bool active) {
     }
 }
 
+void AudioEngineBridge::startRecordingTo(const QString& directory) {
+    if (m_recordingActive) {
+        stopRecording();
+    }
+
+    m_recorderManager = std::make_unique<AudioRecorderManager>();
+    QString sessionName = directory + "/recording_" + QDateTime::currentDateTime().toString("yyyy-MM-dd_hhmmss");
+    m_recorderManager->initialize(8, sessionName.toStdString());
+
+    if (m_engine) {
+        m_engine->setRecorder(m_recorderManager.get());
+        m_engine->setRecordingArmed(true);
+    }
+
+    m_recorderManager->startSession(static_cast<uint32_t>(m_activeSampleRate));
+    m_recordArmed = true;
+    m_recordingActive = true;
+    emit recordArmedChanged();
+    emit recordingActiveChanged();
+
+    RealtimeLogger::getInstance().log("Recording started to: " + sessionName.toStdString());
+}
+
+void AudioEngineBridge::stopRecording() {
+    if (!m_recordingActive) return;
+
+    if (m_engine) {
+        m_engine->setRecordingArmed(false);
+    }
+
+    m_recorderManager->stopSession();
+    m_recordArmed = false;
+    m_recordingActive = false;
+    emit recordArmedChanged();
+    emit recordingActiveChanged();
+
+    RealtimeLogger::getInstance().log("Recording stopped.");
+}
+
 void AudioEngineBridge::configureShowChannels(int numInputs, int numBuses, int numAuxes, int numDCAs) {
     RealtimeLogger::getInstance().log("Reconfiguring Show Channels: Ins=" + std::to_string(numInputs) +
                                       ", Buses=" + std::to_string(numBuses) +
