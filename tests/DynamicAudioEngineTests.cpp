@@ -3,6 +3,8 @@
 #include "AudioEngineCore.h"
 #include <array>
 #include <algorithm>
+#include <filesystem>
+#include <fstream>
 #include <cmath>
 
 // Test suite for Dynamic Audio Engine Summing & Pre-allocated Pools
@@ -623,8 +625,59 @@ TEST_F(DynamicAudioEngineTest, UnpatchedChannelsOutputSilence) {
     EXPECT_EQ(masterPeak, 0.0f);
 }
 
+TEST_F(DynamicAudioEngineTest, AudioRecorderManagerWritesWavStems) {
+    std::string sessionDir = "test_recording_session";
+    AudioRecorderManager recorder;
+    recorder.initialize(8, sessionDir);
 
+    recorder.startSession(48000);
 
+    for (int ch = 0; ch < 8; ++ch) {
+        AudioRecordBlock block;
+        block.count = 256;
+        for (size_t s = 0; s < 256; ++s) {
+            block.samples[s] = 0.5f * static_cast<float>(ch + 1);
+        }
+        bool pushed = recorder.pushBlock(ch, block);
+        EXPECT_TRUE(pushed);
+    }
 
+    recorder.stopSession();
 
+    // Verify 8 WAV files created with correct headers
+    for (int ch = 0; ch < 8; ++ch) {
+        std::string path = sessionDir + "/track_" + std::to_string(ch + 1) + ".wav";
+        std::ifstream file(path, std::ios::binary);
+        EXPECT_TRUE(file.is_open()) << "Missing WAV file: " << path;
+        if (file.is_open()) {
+            char riff[4];
+            file.read(riff, 4);
+            EXPECT_EQ(std::string(riff, 4), "RIFF");
+
+            file.seekg(22);
+            uint16_t numChannels;
+            file.read(reinterpret_cast<char*>(&numChannels), 2);
+            EXPECT_EQ(numChannels, 1);
+
+            file.seekg(24);
+            uint32_t sampleRate;
+            file.read(reinterpret_cast<char*>(&sampleRate), 4);
+            EXPECT_EQ(sampleRate, 48000u);
+
+            file.seekg(34);
+            uint16_t bitsPerSample;
+            file.read(reinterpret_cast<char*>(&bitsPerSample), 2);
+            EXPECT_EQ(bitsPerSample, 24);
+
+            file.close();
+        }
+    }
+
+    // Clean up test files
+    for (int ch = 0; ch < 8; ++ch) {
+        std::string path = sessionDir + "/track_" + std::to_string(ch + 1) + ".wav";
+        std::remove(path.c_str());
+    }
+    std::filesystem::remove_all(sessionDir);
+}
 
