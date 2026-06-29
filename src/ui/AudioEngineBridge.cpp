@@ -299,7 +299,6 @@ AudioEngineBridge::AudioEngineBridge(QObject* parent)
             outputPtrs[ch] = &outputBuffers[ch * 256];
         }
         
-        size_t sampleCounter = 0;
         auto nextFrameTime = std::chrono::steady_clock::now();
         const auto frameDuration = std::chrono::microseconds(5333); // 256 samples @ 48kHz
 
@@ -347,23 +346,11 @@ AudioEngineBridge::AudioEngineBridge(QObject* parent)
                         std::fill_n(&inputBuffers[ch * 256], 256, 0.0f);
                     }
                 } else {
-                    // Fallback to test generator signal for unpatched/generator/other channels
-                    float* chBuf = &inputBuffers[ch * 256];
-                    for (size_t s = 0; s < 256; ++s) {
-                        float t = static_cast<float>(sampleCounter + s) / 48000.0f;
-                        float lfo = 0.5f + 0.5f * std::sin(2.0f * 3.14159f * 0.2f * t);
-                        float freq = 440.0f + ch * 20.0f;
-                        float sig = std::sin(2.0f * 3.14159f * freq * t) * lfo;
-                        float whiteNoise = (((rand() % 2000) / 1000.0f) - 1.0f) * 0.05f;
-                        chBuf[s] = (sig * 0.25f) + whiteNoise;
-                    }
+                    // No real source patched — silence
+                    std::fill_n(&inputBuffers[ch * 256], 256, 0.0f);
                 }
             }
 
-            sampleCounter += 256;
-            if (sampleCounter >= 48000 * 60) {
-                sampleCounter = 0;
-            }
             SystemWatchdog::getInstance().registerAudioCallback();
 
             // 3. Process DSP block

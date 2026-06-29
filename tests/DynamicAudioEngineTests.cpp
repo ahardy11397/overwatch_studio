@@ -601,6 +601,28 @@ TEST(LocalMediaDeckTest, VerifyMediaPatchAudioStreaming) {
     EXPECT_TRUE(hasSignal);
 }
 
+TEST_F(DynamicAudioEngineTest, UnpatchedChannelsOutputSilence) {
+    auto core = std::make_unique<AudioEngineCore>();
+    // Configure engine with no active routes
+    core->configureEngine(8, 2, 0, 8);
+
+    std::array<float, 256> inputBuf{};
+    std::array<float, 256> outputBuf{};
+    std::fill_n(inputBuf.data(), 256, 1.0f);
+    const float* inPtrs[24] = {};
+    float* outPtrs[8] = {};
+    for (int i = 0; i < 24; ++i) inPtrs[i] = inputBuf.data();
+    for (int i = 0; i < 8; ++i) outPtrs[i] = outputBuf.data();
+
+    core->audioDeviceIOCallbackWithContext(
+        inPtrs, 24, outPtrs, 8, 256, nullptr
+    );
+
+    // Master peak should be 0 since no routes are set after configureEngine clears the matrix
+    float masterPeak = core->getMasterPeak().load(std::memory_order_relaxed);
+    EXPECT_EQ(masterPeak, 0.0f);
+}
+
 
 
 
