@@ -1,5 +1,8 @@
 #include <gtest/gtest.h>
 #include "AudioEngineCore.h"
+#include "WASAPIDeviceWorker.h"
+#include <mmdeviceapi.h>
+#include <audioclient.h>
 #include <chrono>
 #include <vector>
 #include <iostream>
@@ -89,4 +92,32 @@ TEST_F(AudioEngineTest, VerifyRouteTogglingAndGain) {
     matrix.process(sourceSpan, destSpan, 64);
     
     EXPECT_NEAR(outputBuffer[0], 0.707f, 1e-5f);
+}
+
+TEST_F(AudioEngineTest, WASAPIDeviceWorkerDefaultFormatQuery) {
+    HRESULT coInitHr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    IMMDeviceEnumerator* enumerator = nullptr;
+    HRESULT hr = CoCreateInstance(
+        __uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
+        __uuidof(IMMDeviceEnumerator), (void**)&enumerator
+    );
+    ASSERT_TRUE(SUCCEEDED(hr));
+    IMMDevice* device = nullptr;
+    hr = enumerator->GetDefaultAudioEndpoint(eCapture, eConsole, &device);
+    if (FAILED(hr)) {
+        enumerator->Release();
+        if (coInitHr == S_OK || coInitHr == S_FALSE) CoUninitialize();
+        GTEST_SKIP() << "No capture device available";
+    }
+    WASAPIDeviceWorker worker(device, WASAPIDeviceWorker::Mode::Capture);
+    worker.start();
+    WAVEFORMATEX* fmt = worker.getMixFormat();
+    EXPECT_NE(fmt, nullptr);
+    if (fmt) {
+        EXPECT_GT(fmt->nSamplesPerSec, 0u);
+    }
+    worker.stop();
+    device->Release();
+    enumerator->Release();
+    if (coInitHr == S_OK || coInitHr == S_FALSE) CoUninitialize();
 }

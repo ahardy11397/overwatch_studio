@@ -1,4 +1,7 @@
 #pragma once
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #include <audioclient.h>
 #include <mmdeviceapi.h>
@@ -30,6 +33,10 @@ public:
     int getChannelCount() const noexcept;
     size_t getBufferedSampleCount() const noexcept;
 
+    WAVEFORMATEX* getMixFormat() const noexcept { return m_mixFormat; }
+    bool isExclusive() const noexcept { return m_exclusive; }
+    void setExclusive(bool exclusive) noexcept { m_exclusive = exclusive; }
+
 private:
     void runLoop() noexcept;
 
@@ -51,5 +58,6 @@ private:
     size_t m_ringWritePos = 0;
     std::vector<size_t> m_ringReadPos;
     size_t m_ringBufferSize = 16384;
+    bool m_exclusive = false;
     mutable std::mutex m_ringMutex;
 };

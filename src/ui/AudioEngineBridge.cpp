@@ -88,6 +88,7 @@ AudioEngineBridge::AudioEngineBridge(QObject* parent)
                     IMMDevice* device = nullptr;
                     if (SUCCEEDED(captureCollection->Item(i, &device)) && device) {
                         auto worker = std::make_unique<WASAPIDeviceWorker>(device, WASAPIDeviceWorker::Mode::Capture);
+                        worker->setExclusive(true);
                         if (worker->start()) {
                             m_captureWorkers.push_back(std::move(worker));
                         }
@@ -108,6 +109,7 @@ AudioEngineBridge::AudioEngineBridge(QObject* parent)
                     IMMDevice* device = nullptr;
                     if (SUCCEEDED(renderCollection->Item(i, &device)) && device) {
                         auto worker = std::make_unique<WASAPIDeviceWorker>(device, WASAPIDeviceWorker::Mode::Render);
+                        worker->setExclusive(true);
                         if (worker->start()) {
                             m_renderWorkers.push_back(std::move(worker));
                         }

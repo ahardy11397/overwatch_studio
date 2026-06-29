@@ -1,4 +1,5 @@
 #include "WASAPIDeviceWorker.h"
+#include "RealtimeLogger.h"
 #include <functiondiscoverykeys_devpkey.h>
 #include <algorithm>
 #include <cmath>
@@ -65,8 +66,28 @@ bool WASAPIDeviceWorker::start() noexcept {
 
     REFERENCE_TIME duration = 100000; // 10ms
     DWORD flags = 0;
+    HRESULT hrInit = E_FAIL;
 
-    hr = m_audioClient->Initialize(AUDCLNT_SHAREMODE_SHARED, flags, duration, 0, m_mixFormat, nullptr);
+    if (m_exclusive) {
+        hrInit = m_audioClient->Initialize(
+            AUDCLNT_SHAREMODE_EXCLUSIVE, flags,
+            duration, duration, m_mixFormat, nullptr
+        );
+        if (FAILED(hrInit)) {
+            RealtimeLogger::getInstance().log("WASAPI exclusive mode failed, falling back to shared.");
+            hrInit = m_audioClient->Initialize(
+                AUDCLNT_SHAREMODE_SHARED, flags,
+                duration, 0, m_mixFormat, nullptr
+            );
+        }
+    } else {
+        hrInit = m_audioClient->Initialize(
+            AUDCLNT_SHAREMODE_SHARED, flags,
+            duration, 0, m_mixFormat, nullptr
+        );
+    }
+
+    hr = hrInit;
     if (FAILED(hr)) return false;
 
     int channels = m_mixFormat->nChannels;
