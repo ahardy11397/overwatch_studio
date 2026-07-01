@@ -1,0 +1,29 @@
+# Build output
+build/
+*.exe
+*.msi
+*.wixpdb
+*.lib
+*.exp
+*.pdb
+*.ilk
+
+# vcpkg installed artifacts (local)
+vcpkg_installed/
+
+# Scratch scripts
+scratch/
+
+# Logs
+*.log
+
+# IDE
+.vs/
+.idea/
+*.user
+*.suo
+
+# Temp
+__pycache__/
+*.pyc
+.DS_Store
