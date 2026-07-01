@@ -153,6 +153,7 @@ add_executable(AudioEngineTests
     src/core/audio/WindowsProcessCapture.cpp
     src/core/audio/WindowsProcessCapture.h
     src/core/video/VideoEngineCore.cpp
+    src/core/video/WindowsGraphicsCapture.cpp
     src/core/video/FFmpegCaptureSource.cpp
     src/core/video/FFmpegCaptureSource.h
     src/core/video/VideoCaptureManager.cpp
@@ -180,6 +181,7 @@ target_link_libraries(AudioEngineTests PRIVATE
     oscpack::oscpack
     ws2_32
     winmm
+    runtimeobject
 )
 add_test(NAME AudioEngineTests COMMAND AudioEngineTests)
 
@@ -228,6 +230,7 @@ target_link_libraries(overwatch_studio PRIVATE
     oscpack::oscpack
     ws2_32
     winmm
+    runtimeobject
 )
 
 set_target_properties(overwatch_studio PROPERTIES WIN32_EXECUTABLE ON)

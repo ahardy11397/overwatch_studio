@@ -6,10 +6,11 @@
 #include <winrt/Windows.Graphics.DirectX.h>
 #include <winrt/Windows.Graphics.DirectX.Direct3D11.h>
 #include <windows.graphics.capture.interop.h>
+#include <windows.graphics.directx.direct3d11.interop.h>
 #include <winrt/base.h>
 
-// DirectX interop - Note: this is the standard header for the interop interface, NOT a WinRT one.
-#include <windows.graphics.directx.direct3d11.interop.h>
+// IDirect3DDxgiInterfaceAccess from the interop header is in this namespace
+// pixel format enum uses C-style names (DirectXPixelFormat_B8G8R8A8UIntNormalized)
 
 #include <iostream>
 #include <mutex>
@@ -64,7 +65,7 @@ struct WindowsGraphicsCapture::Impl {
 
         m_framePool = winrt::Windows::Graphics::Capture::Direct3D11CaptureFramePool::CreateFreeThreaded(
             m_winrtDevice,
-            winrt::Windows::Graphics::DirectX::DirectXPixelFormat::B8G8R8A8UintNormalized,
+            winrt::Windows::Graphics::DirectX::DirectXPixelFormat::B8G8R8A8UIntNormalized,
             2,
             size
         );
@@ -102,17 +103,29 @@ struct WindowsGraphicsCapture::Impl {
         if (!frame) return;
 
         auto timestamp = frame.SystemRelativeTime().count();
+
+        // Get the DXGI interop interface from the WinRT surface
         auto surface = frame.Surface();
+        void* abi = winrt::get_abi(surface);
 
-        // Use the COM interface from the WinRT surface
-        winrt::com_ptr<::IDirect3DDxgiInterfaceAccess> access;
-        winrt::check_hresult(surface.as(IID_PPV_ARGS(access.put())));
+        using namespace Windows::Graphics::DirectX::Direct3D11;
+        IDirect3DDxgiInterfaceAccess* dxgiInterop = nullptr;
+        HRESULT hr = (static_cast<::IUnknown*>(abi))->QueryInterface(
+            __uuidof(IDirect3DDxgiInterfaceAccess),
+            reinterpret_cast<void**>(&dxgiInterop));
+        if (FAILED(hr)) return;
 
-        winrt::com_ptr<ID3D11Texture2D> texture;
-        winrt::check_hresult(access->GetInterface(IID_PPV_ARGS(texture.put())));
+        ID3D11Texture2D* texture = nullptr;
+        hr = dxgiInterop->GetInterface(__uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&texture));
+        dxgiInterop->Release();
+        if (FAILED(hr)) return;
 
         if (m_callback) {
-            m_callback(texture.get(), static_cast<uint64_t>(timestamp));
+            m_callback(texture, static_cast<uint64_t>(timestamp));
+        }
+
+        if (m_callback) {
+            m_callback(texture, static_cast<uint64_t>(timestamp));
         }
     }
 };
