@@ -234,3 +234,26 @@ target_link_libraries(overwatch_studio PRIVATE
 )
 
 set_target_properties(overwatch_studio PROPERTIES WIN32_EXECUTABLE ON)
+
+# --- WiX Installer (requires WiX v5 toolset) ---
+# Install WiX: https://wixtoolset.org/docs/wix5/
+# Build: cmake --build build --config Release && cpack -G WIX -C Release
+if(WIN32 AND EXISTS "${CMAKE_SOURCE_DIR}/installer.wxs")
+    set(CPACK_GENERATOR "WIX")
+    set(CPACK_PACKAGE_NAME "Overwatch Studio")
+    set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
+    set(CPACK_PACKAGE_VENDOR "Antigravity AI")
+    set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Software-defined sound console and video switcher")
+    set(CPACK_PACKAGE_INSTALL_DIRECTORY "Overwatch Studio")
+    set(CPACK_PACKAGE_EXECUTABLES "overwatch_studio" "Overwatch Studio")
+    set(CPACK_CREATE_DESKTOP_LINKS "overwatch_studio")
+    set(CPACK_WIX_ROOT "${CMAKE_SOURCE_DIR}")
+    set(CPACK_WIX_PRODUCT_GUID "8ae7482b-63a2-4a0b-9ee7-67c7e937d1c1")
+    set(CPACK_WIX_UPGRADE_GUID "8ae7482b-63a2-4a0b-9ee7-67c7e937d1c1")
+    set(CPACK_WIX_UI_BANNER "${CMAKE_SOURCE_DIR}/assets/installer/banner.bmp")
+    set(CPACK_WIX_UI_DIALOG "${CMAKE_SOURCE_DIR}/assets/installer/dialog.bmp")
+    # ponytail: WiX harvests Qt + vcpkg DLLs automatically via CPack's
+    # WIX auto-dependency. If the installer is missing DLLs, run:
+    #   heat.exe dir <build/bin/Release> -gg -sfrag -out dependencies.wxs
+    include(CPack)
+endif()

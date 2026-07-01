@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+    <Package Name="Overwatch Studio"
+             Manufacturer="Antigravity AI"
+             Version="0.1.0"
+             UpgradeCode="8ae7482b-63a2-4a0b-9ee7-67c7e937d1c1"
+             Language="1033">
+
+        <SummaryInformation Description="Software-defined sound console and video switcher" />
+
+        <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+
+        <MediaTemplate EmbedCab="yes" />
+
+        <Feature Id="Main" Title="Overwatch Studio" Level="1">
+            <ComponentGroupRef Id="AppComponents" />
+        </Feature>
+
+        <StandardDirectory Id="ProgramFiles64Folder">
+            <Directory Id="INSTALLFOLDER" Name="Overwatch Studio" />
+        </StandardDirectory>
+
+        <ComponentGroup Id="AppComponents" Directory="INSTALLFOLDER">
+            <Component Id="MainExe" Guid="*">
+                <File Id="OverwatchStudioEXE" Source="$(var.OverwatchStudioTarget)" KeyPath="yes" Checksum="yes" />
+                <Shortcut Id="AppShortcut"
+                          Name="Overwatch Studio"
+                          Directory="ProgramMenuFolder"
+                          WorkingDirectory="INSTALLFOLDER"
+                          Icon="AppIcon.exe"
+                          Advertise="yes" />
+            </Component>
+            <!-- Qt DLLs and vcpkg DLLs are harvested by CPack's WiX auto-dependency scan -->
+            <Component Id="DefaultShow" Guid="*">
+                <File Id="DefaultShowSDS" Source="assets/shows/default.sds" KeyPath="yes" />
+            </Component>
+        </ComponentGroup>
+
+        <Icon Id="AppIcon.exe" SourceFile="$(var.OverwatchStudioTarget)" />
+
+        <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+    </Package>
+</Wix>
