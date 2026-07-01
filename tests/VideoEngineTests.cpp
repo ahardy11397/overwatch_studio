@@ -75,3 +75,42 @@ TEST_F(VideoEngineTest, VerifyShaderCompilation) {
     EXPECT_NE(compositor.quadInputLayout, nullptr);
 }
 
+TEST_F(VideoEngineTest, EngineCoreRenderLoop) {
+    VideoSyncManager sync;
+    VideoEngineCore engine;
+    engine.setSyncManager(&sync);
+
+    ComPtr<ID3D11Device> device;
+    ComPtr<ID3D11DeviceContext> context;
+    D3D_FEATURE_LEVEL featureLevel;
+
+    HRESULT hr = D3D11CreateDevice(
+        nullptr,
+        D3D_DRIVER_TYPE_NULL,
+        nullptr,
+        0,
+        nullptr,
+        0,
+        D3D11_SDK_VERSION,
+        device.GetAddressOf(),
+        &featureLevel,
+        context.GetAddressOf()
+    );
+
+    ASSERT_TRUE(SUCCEEDED(hr));
+
+    hr = engine.getCompositor().initialize(device.Get(), context.Get());
+    ASSERT_TRUE(SUCCEEDED(hr));
+
+    // Push a mock texture
+    void* mockTex = reinterpret_cast<void*>(0x1234);
+    sync.pushFrame(0, mockTex, 0);
+
+    engine.start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    engine.stop();
+
+    // If we reached here without crashing, the render loop started and stopped correctly
+    EXPECT_EQ(engine.getCompositor().inputTextures[0], mockTex);
+}
+

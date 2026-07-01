@@ -97,6 +97,7 @@ add_executable(AudioEngineTests
     src/core/audio/WASAPIDeviceWorker.h
     src/core/audio/WindowsProcessCapture.cpp
     src/core/audio/WindowsProcessCapture.h
+    src/core/video/WindowsGraphicsCapture.cpp
     src/ui/LocalMediaDeck.cpp
     src/ui/LocalMediaDeck.h
 )

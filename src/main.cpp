@@ -12,6 +12,9 @@
 #include "core/control/RealtimeLogger.h"
 #include "core/control/SystemWatchdog.h"
 #include "core/control/ResourceShedder.h"
+#include "core/control/WindowStateStore.h"
+#include "core/control/ShowfileManager.h"
+#include <filesystem>
 
 void qtMessageHandler(QtMsgType type, const QMessageLogContext &context, const QString &msg) {
     std::string levelPrefix;
@@ -33,7 +36,22 @@ int main(int argc, char *argv[]) {
     QQuickStyle::setStyle("Basic");
     RealtimeLogger::getInstance().start("F:/Drive/scripts/overwatch_studio/overwatch_studio_realtime.log");
     qInstallMessageHandler(qtMessageHandler);
-    
+
+    // Bootstrapping: Ensure default showfile exists
+    std::filesystem::path assetsDir = "F:/Drive/scripts/overwatch_studio/assets/shows";
+    if (!std::filesystem::exists(assetsDir)) {
+        std::filesystem::create_directories(assetsDir);
+    }
+    std::filesystem::path defaultShow = assetsDir / "default.sds";
+    if (!std::filesystem::exists(defaultShow)) {
+        ShowfileManager sfm;
+        if (sfm.createDefaultShowfile(defaultShow.string())) {
+            RealtimeLogger::getInstance().log("Generated default.sds successfully.");
+        } else {
+            RealtimeLogger::getInstance().log("ERROR: Failed to generate default.sds.");
+        }
+    }
+
     QGuiApplication app(argc, argv);
 
     RealtimeLogger::getInstance().log("OVERWATCH STUDIO SYSTEM ENGINE STARTUP SEQUENCE INITIATED...");
@@ -45,20 +63,31 @@ int main(int argc, char *argv[]) {
     qmlRegisterType<AudioEngineBridge>("Overwatch.Core", 1, 0, "AudioEngineBridge");
     qmlRegisterType<VideoCanvasMock>("Overwatch.Core", 1, 0, "VideoCanvasMock");
     qmlRegisterType<ShowBuilderBridge>("Overwatch.Core", 1, 0, "ShowBuilderBridge");
+    qmlRegisterType<WindowStateStore>("Overwatch.Core", 1, 0, "WindowStateStore");
     qmlRegisterUncreatableType<LocalMediaDeck>("Overwatch.Core", 1, 0, "LocalMediaDeck", "Cannot instantiate LocalMediaDeck directly");
 
     QQmlApplicationEngine engine;
+
+    // Instantiate persistent bridges as context properties if needed globally,
+    // or let individual windows instantiate them as registered types.
+    // Given the architecture, we want shared state, so context properties are better.
+    AudioEngineBridge audioBridge;
+    ShowBuilderBridge showBuilderBridge;
+
+    engine.rootContext()->setContextProperty("audioCore", &audioBridge);
+    engine.rootContext()->setContextProperty("showBuilder", &showBuilderBridge);
+
     engine.addImportPath("qrc:/");
     engine.addImportPath("qrc:/qt/qml/");
 
-    QString localPath = "F:/Drive/scripts/overwatch_studio/src/ui/Main.qml";
+    QString localPath = "F:/Drive/scripts/overwatch_studio/src/ui/MasterLauncher.qml";
     QUrl url;
     if (QFile::exists(localPath)) {
         url = QUrl::fromLocalFile(localPath);
-        RealtimeLogger::getInstance().log("Found local Main.qml. Loading from filesystem: " + url.toString().toStdString());
+        RealtimeLogger::getInstance().log("Found local MasterLauncher.qml. Loading from filesystem: " + url.toString().toStdString());
     } else {
-        url = QUrl(u"qrc:/qt/qml/overwatch_studio/src/ui/Main.qml"_qs);
-        RealtimeLogger::getInstance().log("Local Main.qml not found. Loading from QRC: " + url.toString().toStdString());
+        url = QUrl(u"qrc:/qt/qml/overwatch_studio/src/ui/MasterLauncher.qml"_qs);
+        RealtimeLogger::getInstance().log("Local MasterLauncher.qml not found. Loading from QRC: " + url.toString().toStdString());
     }
 
     QObject::connect(&engine, &QQmlApplicationEngine::objectCreated,

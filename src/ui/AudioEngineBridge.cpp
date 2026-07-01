@@ -792,6 +792,44 @@ void AudioEngineBridge::notifyFaderChanged(int chIdx, double val) {
 void AudioEngineBridge::processAudioFeedback() {
     if (!m_engine) return;
 
+    // Process External Control Commands
+    while (auto cmdOpt = ExternalControlSurfaceManager::getInstance().popCommand()) {
+        const auto& cmd = *cmdOpt;
+        m_lastControlSurface = (cmd.source == ControlCommand::OSC) ? "OSC" :
+                               (cmd.source == ControlCommand::MIDI) ? "MIDI" : "StreamDeck";
+
+        switch (cmd.type) {
+            case ControlCommand::VOLUME:
+                if (cmd.channelIndex < 24) {
+                    // Regular Channel
+                    notifyFaderChanged(cmd.channelIndex, cmd.value);
+                } else if (cmd.channelIndex >= 24 && cmd.channelIndex < 32) {
+                    // DCA
+                    updateDCAVolume(cmd.channelIndex - 24, cmd.value);
+                }
+                m_lastControlSurfaceMsg = QString("Volume Ch %1: %2").arg(cmd.channelIndex + 1).arg(cmd.value, 0, 'f', 2);
+                break;
+            case ControlCommand::MUTE:
+                if (cmd.channelIndex < 24) {
+                    setChannelMuted(cmd.channelIndex, cmd.value > 0.5f);
+                }
+                m_lastControlSurfaceMsg = QString("Mute Ch %1: %2").arg(cmd.channelIndex + 1).arg(cmd.value > 0.5f ? "ON" : "OFF");
+                break;
+            case ControlCommand::CUE_TRIGGER:
+                 if (cmd.channelIndex == 10) {
+                     if (cmd.value > 0.5f) startRecordingTo("C:/Recordings");
+                     else stopRecording();
+                 }
+                m_lastControlSurfaceMsg = QString("Cue %1: %2").arg(cmd.channelIndex).arg(cmd.value);
+                break;
+            case ControlCommand::PANIC:
+                setFadeToBlack(true);
+                m_lastControlSurfaceMsg = "PANIC!";
+                break;
+        }
+        emit controlSurfaceChanged();
+    }
+
     constexpr float decayFactor = 0.88f; // Peak meter smooth release decay factor
 
     for (int i = 0; i < 24; ++i) {
