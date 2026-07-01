@@ -5,6 +5,11 @@
 #include <chrono>
 #include <thread>
 
+struct ID3D11Texture2D;
+
+/// Global pointer to the latest composited frame — read by VideoCanvasMock each frame
+extern std::atomic<ID3D11Texture2D*> g_videoOutputTexture;
+
 class VideoSyncManager;
 
 class VideoEngineCore {
@@ -15,6 +20,7 @@ public:
         transitionType.store(0);
         dskActive.store(false);
         dskOpacity.store(0.0f);
+        m_latestOutput = nullptr;
     }
 
     ~VideoEngineCore() {
@@ -45,6 +51,10 @@ public:
     bool getDSKActive() const noexcept { return dskActive.load(std::memory_order_relaxed); }
     float getDSKOpacity() const noexcept { return dskOpacity.load(std::memory_order_relaxed); }
 
+    /// Latest composited output texture — polled by VideoCanvasMock each frame
+    ID3D11Texture2D* latestOutput() const noexcept { return m_latestOutput.load(std::memory_order_acquire); }
+    void setLatestOutput(ID3D11Texture2D* tex) noexcept { m_latestOutput.store(tex, std::memory_order_release); }
+
 private:
     void renderLoop();
 
@@ -55,5 +65,6 @@ private:
     std::atomic<bool> dskActive{false};
     std::atomic<float> dskOpacity{0.0f};
     std::atomic<bool> isRunning{false};
+    std::atomic<ID3D11Texture2D*> m_latestOutput{nullptr};
     std::thread renderThread;
 };

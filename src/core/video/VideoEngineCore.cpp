@@ -2,6 +2,8 @@
 #include "VideoSyncManager.h"
 #include <chrono>
 
+std::atomic<ID3D11Texture2D*> g_videoOutputTexture{nullptr};
+
 void VideoEngineCore::renderLoop() {
     // Target 60 FPS (16.666ms per frame)
     const auto frameDuration = std::chrono::microseconds(16666);
