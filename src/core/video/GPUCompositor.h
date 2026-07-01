@@ -327,7 +327,7 @@ public:
         vbDesc.Usage = D3D11_USAGE_DEFAULT;
         vbDesc.ByteWidth = sizeof(vertices);
         vbDesc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-        
+
         D3D11_SUBRESOURCE_DATA subData = {};
         subData.pSysMem = vertices;
         hr = d3dDevice->CreateBuffer(&vbDesc, &subData, quadVB.ReleaseAndGetAddressOf());
@@ -343,9 +343,36 @@ public:
         return hr;
     }
 
+    void REALTIME_SAFE uploadInputTexture(size_t index, void* textureHandle) noexcept {
+        if (index >= 4) return;
+        inputTextures[index] = static_cast<ID3D11ShaderResourceView*>(textureHandle);
+    }
+
+    void REALTIME_SAFE process() noexcept {
+        if (!d3dContext) return;
+
+        // Basic render process:
+        // 1. Set generic state
+        struct Vertex {
+            DirectX::XMFLOAT3 pos;
+            DirectX::XMFLOAT2 uv;
+        };
+        UINT stride = sizeof(Vertex);
+        UINT offset = 0;
+        d3dContext->IASetVertexBuffers(0, 1, quadVB.GetAddressOf(), &stride, &offset);
+        d3dContext->IASetInputLayout(quadInputLayout.Get());
+        d3dContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+        d3dContext->VSSetShader(quadVS.Get(), nullptr, 0);
+
+        // 2. Perform composition passes (placeholders for now)
+        // In a real implementation, we'd render to offscreen targets
+    }
+
+    ID3D11ShaderResourceView* inputTextures[4] = {nullptr, nullptr, nullptr, nullptr};
+
     ComPtr<ID3D11Device> d3dDevice;
     ComPtr<ID3D11DeviceContext> d3dContext;
-    
+
     ComPtr<ID3D11Buffer> procAmpCb;
     ComPtr<ID3D11Buffer> chromaKeyCb;
     ComPtr<ID3D11Buffer> upstreamKeyerCb;
