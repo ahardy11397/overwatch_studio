@@ -30,19 +30,19 @@ find_package(SQLite3 REQUIRED)
 find_package(Qt6 COMPONENTS Core Gui Qml Quick QuickControls2 REQUIRED)
 # FFmpeg - vcpkg doesn't provide CMake config, use find_library instead
 find_path(FFMPEG_AVFORMAT_INCLUDE_DIR NAMES libavformat/avformat.h
-    HINTS "${CMAKE_BINARY_DIR}/vcpkg_installed/x64-windows/include"
+    HINTS "${CMAKE_SOURCE_DIR}/vcpkg_installed/x64-windows/include"
     REQUIRED)
 find_library(FFMPEG_AVFORMAT_LIBRARY NAMES avformat
-    HINTS "${CMAKE_BINARY_DIR}/vcpkg_installed/x64-windows/lib"
+    HINTS "${CMAKE_SOURCE_DIR}/vcpkg_installed/x64-windows/lib"
     REQUIRED)
 find_library(FFMPEG_AVCODEC_LIBRARY NAMES avcodec
-    HINTS "${CMAKE_BINARY_DIR}/vcpkg_installed/x64-windows/lib"
+    HINTS "${CMAKE_SOURCE_DIR}/vcpkg_installed/x64-windows/lib"
     REQUIRED)
 find_library(FFMPEG_AVUTIL_LIBRARY NAMES avutil
-    HINTS "${CMAKE_BINARY_DIR}/vcpkg_installed/x64-windows/lib"
+    HINTS "${CMAKE_SOURCE_DIR}/vcpkg_installed/x64-windows/lib"
     REQUIRED)
 find_library(FFMPEG_SWSCALE_LIBRARY NAMES swscale
-    HINTS "${CMAKE_BINARY_DIR}/vcpkg_installed/x64-windows/lib"
+    HINTS "${CMAKE_SOURCE_DIR}/vcpkg_installed/x64-windows/lib"
     REQUIRED)
 
 add_library(FFMPEG::avformat UNKNOWN IMPORTED)
@@ -71,9 +71,9 @@ message(STATUS "Found FFmpeg: ${FFMPEG_AVFORMAT_LIBRARY}")
 # ponytail: all-config oscpack, install debug variant if needed later
 add_library(oscpack::oscpack UNKNOWN IMPORTED)
 set_target_properties(oscpack::oscpack PROPERTIES
-    IMPORTED_LOCATION "${CMAKE_BINARY_DIR}/vcpkg_installed/x64-windows/lib/oscpack.lib"
-    IMPORTED_LOCATION_DEBUG "${CMAKE_BINARY_DIR}/vcpkg_installed/x64-windows/lib/oscpack.lib"
-    INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_BINARY_DIR}/vcpkg_installed/x64-windows/include"
+    IMPORTED_LOCATION "${CMAKE_SOURCE_DIR}/vcpkg_installed/x64-windows/lib/oscpack.lib"
+    IMPORTED_LOCATION_DEBUG "${CMAKE_SOURCE_DIR}/vcpkg_installed/x64-windows/lib/oscpack.lib"
+    INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_SOURCE_DIR}/vcpkg_installed/x64-windows/include"
 )
 message(STATUS "Found oscpack: ${OSCPACK_LIBRARY}")
 
@@ -153,11 +153,12 @@ add_executable(AudioEngineTests
     src/core/audio/WindowsProcessCapture.cpp
     src/core/audio/WindowsProcessCapture.h
     src/core/video/VideoEngineCore.cpp
-    src/core/video/WindowsGraphicsCapture.cpp
     src/core/video/FFmpegCaptureSource.cpp
     src/core/video/FFmpegCaptureSource.h
     src/core/video/VideoCaptureManager.cpp
     src/core/video/VideoCaptureManager.h
+    src/core/video/WindowsGraphicsCapture.cpp
+    src/core/video/WindowsGraphicsCapture.h
     src/ui/LocalMediaDeck.cpp
     src/ui/LocalMediaDeck.h
     src/core/control/ShowfileManager.cpp
@@ -210,6 +211,9 @@ add_executable(overwatch_studio
     src/core/video/FFmpegCaptureSource.h
     src/core/video/VideoCaptureManager.cpp
     src/core/video/VideoCaptureManager.h
+    src/core/video/VideoEngineCore.cpp
+    src/core/video/WindowsGraphicsCapture.cpp
+    src/core/video/WindowsGraphicsCapture.h
 )
 
 qt_add_qml_module(overwatch_studio
@@ -227,6 +231,8 @@ target_link_libraries(overwatch_studio PRIVATE
     simdjson::simdjson
     ole32
     mmdevapi
+    d3d11
+    d3dcompiler
     oscpack::oscpack
     ws2_32
     winmm
@@ -234,6 +240,7 @@ target_link_libraries(overwatch_studio PRIVATE
 )
 
 set_target_properties(overwatch_studio PROPERTIES WIN32_EXECUTABLE ON)
+
 
 # --- WiX Installer (requires WiX v5 toolset) ---
 # Install WiX: https://wixtoolset.org/docs/wix5/

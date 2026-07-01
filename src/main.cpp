@@ -5,6 +5,7 @@
 #include <QString>
 #include <QFile>
 #include <QQuickStyle>
+#include <QWindow>
 #include "ui/AudioEngineBridge.h"
 #include "ui/VideoCanvasMock.h"
 #include "ui/ShowBuilderBridge.h"
@@ -14,6 +15,8 @@
 #include "core/control/ResourceShedder.h"
 #include "core/control/WindowStateStore.h"
 #include "core/control/ShowfileManager.h"
+#include "core/video/VideoCaptureManager.h"
+#include "core/video/VideoEngineCore.h"
 #include <filesystem>
 #include <vector>
 
@@ -112,6 +115,61 @@ int main(int argc, char *argv[]) {
         eng->load(url);
         engines.push_back(eng);
     }
+
+    // After all windows loaded, start video capture
+    // Find the VideoSwitcher window and get its HWND for WGC capture
+    for (auto* eng : engines) {
+        const auto roots = eng->rootObjects();
+        if (roots.isEmpty()) continue;
+        // Find which engine loaded VideoSwitcher by checking title
+        auto* qmlWin = qobject_cast<QWindow*>(roots.first());
+        if (qmlWin && qmlWin->title().contains("Video Switcher")) {
+            HWND hwnd = reinterpret_cast<HWND>(qmlWin->winId());
+            if (hwnd) {
+                RealtimeLogger::getInstance().log("VideoSwitcher HWND obtained, starting WGC capture.");
+
+                // Create a D3D11 device for the video pipeline
+                ID3D11Device* d3dDevice = nullptr;
+                ID3D11DeviceContext* d3dCtx = nullptr;
+                D3D_FEATURE_LEVEL featureLevel;
+                HRESULT hr = D3D11CreateDevice(
+                    nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr,
+                    D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+                    nullptr, 0, D3D11_SDK_VERSION,
+                    &d3dDevice, &featureLevel, &d3dCtx);
+                if (SUCCEEDED(hr) && d3dDevice) {
+                    VideoCaptureManager captureMgr;
+                    captureMgr.initialize(d3dDevice);
+                    captureMgr.addWindowSource(0, hwnd);
+                    captureMgr.startAll();
+
+                    // Start the video engine render loop
+                    VideoEngineCore videoEngine;
+                    videoEngine.setSyncManager(&captureMgr.getSyncManager());
+                    videoEngine.start();
+
+                    RealtimeLogger::getInstance().log("Video pipeline started: WGC capture + VideoEngineCore render loop.");
+
+                    int result = app.exec();
+
+                    // Cleanup
+                    videoEngine.stop();
+                    captureMgr.stopAll();
+                    d3dCtx->Release();
+                    d3dDevice->Release();
+
+                    // Cleanup engines
+                    for (auto* e : engines) delete e;
+
+                    SystemWatchdog::getInstance().stop();
+                    RealtimeLogger::getInstance().stop();
+                    return result;
+                }
+            }
+        }
+    }
+
+    RealtimeLogger::getInstance().log("VideoSwitcher window not found — running without WGC capture.");
 
     int result = app.exec();
 
