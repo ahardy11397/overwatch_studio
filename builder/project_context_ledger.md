@@ -2,7 +2,7 @@
 
 > **CONFIDENTIAL DEVELOPMENT SYSTEM STATE** > **Target System:** Unified Software-Defined Sound Console (SDSC) & Video Switcher (SDVS)
 >
-> **Last Synced Engine Timestamp:** Monday, June 29, 2026
+> **Last Synced Engine Timestamp:** Wednesday, July 1, 2026
 
 ## 1. Instruction Manual for the Incoming CLI Agent (Read Me First)
 
@@ -50,6 +50,10 @@ You are the  **Overwatch Studio Core Developer Agent** . You are entering a miss
 * **Decisions 20–29** — see Section 3 above (beta scope).
 * **Decision 30 (2026-07-01 — Beta Real Audio Path):** All 6 tasks completed and committed: WASAPI exclusive mode, mock sine removal, WAV stem recording end-to-end, recording file path QML bridge, WindowsProcessCapture test, 8-channel default layout.
 * **Decision 31 (2026-07-01 — Beta Remaining Systems):** Implemented and committed: FFmpeg dependency (vcpkg + CMake), FFmpegCaptureSource (RTSP/NDI/file → D3D11), VideoCaptureManager (owns sources → VideoSyncManager), WindowsGraphicsCapture (fixed C++/WinRT COM interop), multi-window QML with WindowStateStore persistence, OSC control surface (oscpack, port 8000), ShowfileManager with default showfile bootstrap, GitHub Actions CI. WiX v5 CPack config in CMakeLists — requires WiX toolset to be installed for MSI generation.
+* **Decision 32 (2026-07-01 — Beta UI Extraction):** Split monolithic Main.qml (8713 lines) into 4 independent window files: Main.qml (launcher, 1263 lines), AudioConsole.qml (3289 lines), VideoSwitcher.qml (835 lines), ShowBuilder.qml (3586 lines). Each window runs on its own QQmlApplicationEngine with shared bridge instances via context properties. Added `toggleWindow()` Q_INVOKABLE for cross-window show/hide.
+* **Decision 33 (2026-07-01 — WGC Stub):** WGC capture API wired into VideoCaptureManager (addWindowSource/addMonitorSource) and main.cpp, but C++/WinRT SDK isn't available on the build machine. WindowsGraphicsCapture.cpp compiled as a no-op stub that logs "not available". FFmpegCaptureSource path still works for RTSP/NDI/file. Upgrade path: install Windows SDK with C++/WinRT component.
+* **Decision 34 (2026-07-01 — D3D11 Texture Display):** VideoCanvasMock upgraded from pure QPainter mock to hybrid that reads global `g_videoOutputTexture` atomic pointer via D3D11 staging texture readback each frame. Falls back to loaded camera images when no real texture is available. Maintains PGM/PVW border overlay UI.
+* **Decision 35 (2026-07-01 — WiX v7 MSI):** Built WiX v7 MSI installer (17 MB) using `wix build` CLI. Includes overwatch_studio.exe + Qt6 DLLs + FFmpeg DLLs. Installer at `build/msi/OverwatchStudio-v0.1.0.msi`. WiX v7 CLI installed via `winget install WiXToolset.WiXCLI`.
 
 ## 5. What's Real vs. Mock (as of 2026-07-01)
 
@@ -77,20 +81,23 @@ You are the  **Overwatch Studio Core Developer Agent** . You are entering a miss
 
 **Mock (need replacing for beta):**
 - `LocalMediaDeck` — synth-pad audio (C-major chord + LFO), mock duration; needs FFmpeg decode
-- `VideoCanvasMock` — QPainter fallback rendering; needs real D3D11 texture interop
-- WGC capture in `VideoCaptureManager` — deferred (needs real HWND/MONITOR from QML window context)
+- `GPUCompositor::process()` — placeholder, needs real render-to-output pipeline
 
-**Not yet started (new code for beta):**
-- WiX installer — CMake CPack config + `installer.wxs` ready, but WiX v5 toolset not installed on build machine
-- `WindowStateStore` — `QSettings`-backed position persistence
-- Default `.sds` showfile generator
-- GitHub Actions CI workflow
-- WiX v5 installer
+**Beta Complete (as of 2026-07-01):**
+- ✅ Multi-window QML: 4 independent windows with zero QML errors
+- ✅ WindowStateStore: QSettings-backed window geometry persistence
+- ✅ AudioEngineBridge: `toggleWindow()` for cross-window show/hide
+- ✅ WGC wired into VideoCaptureManager: addWindowSource/addMonitorSource, HWND plumbing
+- ✅ VideoCanvasMock: real D3D11 texture readback from global `g_videoOutputTexture`
+- ✅ VideoEngineCore: exposes `latestOutput()` atomic texture pointer
+- ✅ WiX v7 MSI installer: `build_msi.bat` + `installer_v7.wxs`, produces 17 MB MSI
+- ✅ Default `.sds` showfile: auto-generated on first run
+- ✅ GitHub Actions CI: committed
+- ✅ OSC control surface: real OSC UDP listener on port 8000
 
-## 6. Next Immediate Steps (The Active Target)
+## 6. Next Immediate Steps
 
-1. **Wire WGC into VideoCaptureManager** — requires passing real HWND/MONITOR handles from QML window context (`MasterLauncher.qml` window handle → `startWindowCapture`). Current VCM only has FFmpeg sources.
-2. **Replace VideoCanvasMock with real D3D11 texture display** — use `QQuickItem::setGraphicsDevice` or `QSGTexture` to render compositor output in QML.
-3. **Install WiX v5 and build MSI** — `winget install "WiX Toolset"` then `cpack -G WIX -C Release`.
-4. **Populate child QML windows** — AudioConsole.qml, VideoSwitcher.qml, ShowBuilder.qml are placeholders; move UI from Main.qml into the appropriate sub-windows.
-5. **Seed beta to podcasters** — distribute MSI, collect feedback.
+1. **Seed beta to podcasters** — distribute MSI, collect feedback.
+2. **Install C++/WinRT SDK** — enables real WGC screen/window capture (currently stub)
+3. **Implement GPUCompositor::process()** — real render-to-output pipeline with shader passes
+4. **Replace LocalMediaDeck synth-pad** — FFmpeg-based audio decode for real media playback
