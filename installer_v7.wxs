@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- WiX v7 installer source for Overwatch Studio -->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+    <Package
+        Name="Overwatch Studio"
+        Version="0.1.0.0"
+        Manufacturer="Antigravity AI"
+        UpgradeCode="8ae7482b-63a2-4a0b-9ee7-67c7e937d1c1"
+        Compressed="yes"
+        Scope="perMachine">
+
+        <MajorUpgrade DowngradeErrorMessage="A newer version of Overwatch Studio is already installed." />
+        <MediaTemplate EmbedCab="yes" />
+
+        <!-- Directory structure -->
+        <StandardDirectory Id="ProgramFiles64Folder">
+            <Directory Id="INSTALLFOLDER" Name="Overwatch Studio">
+                <Directory Id="BINDIR" Name="bin" />
+            </Directory>
+        </StandardDirectory>
+
+        <!-- Files to install -->
+        <Feature Id="MainFeature" Title="Overwatch Studio" Level="1">
+            <ComponentGroupRef Id="MainComponents" />
+        </Feature>
+    </Package>
+
+    <Fragment>
+        <ComponentGroup Id="MainComponents" Directory="BINDIR">
+            <Component Id="overwatch_studio.exe">
+                <File Id="overwatch_studio_exe" Source="$(var.SourceDir)\overwatch_studio.exe" />
+            </Component>
+            <Component Id="Qt6Core">
+                <File Id="Qt6Core" Source="$(var.SourceDir)\Qt6Core.dll" />
+            </Component>
+            <Component Id="Qt6Gui">
+                <File Id="Qt6Gui" Source="$(var.SourceDir)\Qt6Gui.dll" />
+            </Component>
+            <Component Id="Qt6Qml">
+                <File Id="Qt6Qml" Source="$(var.SourceDir)\Qt6Qml.dll" />
+            </Component>
+            <Component Id="Qt6Quick">
+                <File Id="Qt6Quick" Source="$(var.SourceDir)\Qt6Quick.dll" />
+            </Component>
+            <Component Id="Qt6QuickControls2">
+                <File Id="Qt6QuickControls2" Source="$(var.SourceDir)\Qt6QuickControls2.dll" />
+            </Component>
+            <Component Id="Qt6Network">
+                <File Id="Qt6Network" Source="$(var.SourceDir)\Qt6Network.dll" />
+            </Component>
+            <Component Id="Qt6QmlModels">
+                <File Id="Qt6QmlModels" Source="$(var.SourceDir)\Qt6QmlModels.dll" />
+            </Component>
+            <Component Id="Qt6OpenGL">
+                <File Id="Qt6OpenGL" Source="$(var.SourceDir)\Qt6OpenGL.dll" />
+            </Component>
+            <Component Id="FFmpegAvcodec">
+                <File Id="avcodec_62" Source="$(var.SourceDir)\avcodec-62.dll" />
+            </Component>
+            <Component Id="FFmpegAvformat">
+                <File Id="avformat_62" Source="$(var.SourceDir)\avformat-62.dll" />
+            </Component>
+            <Component Id="FFmpegAvutil">
+                <File Id="avutil_60" Source="$(var.SourceDir)\avutil-60.dll" />
+            </Component>
+            <Component Id="FFmpegSwscale">
+                <File Id="swscale_9" Source="$(var.SourceDir)\swscale-9.dll" />
+            </Component>
+            <Component Id="FFmpegSwresample">
+                <File Id="swresample_6" Source="$(var.SourceDir)\swresample-6.dll" />
+            </Component>
+            <Component Id="DefaultShow">
+                <File Id="default_sds" Source="$(var.SourceDir)\..\..\..\assets\shows\default.sds" />
+            </Component>
+        </ComponentGroup>
+    </Fragment>
+</Wix>
