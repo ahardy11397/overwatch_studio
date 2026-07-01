@@ -166,6 +166,7 @@ public:
     Q_INVOKABLE void startRecordingTo(const QString& directory);
     Q_INVOKABLE void stopRecording();
     Q_INVOKABLE void configureShowChannels(int numInputs, int numBuses, int numAuxes, int numDCAs);
+    Q_INVOKABLE void toggleWindow(const QString& title);
 
     QVariantList availableDrivers() const { return { "ASIO (Low-Latency)", "WASAPI Shared", "DirectSound" }; }
     QVariantList availableDevices() const { return { "Dante Virtual Soundcard", "ASIO Focusrite USB", "Built-in Sound Device" }; }

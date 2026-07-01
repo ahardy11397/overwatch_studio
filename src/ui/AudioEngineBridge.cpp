@@ -11,6 +11,8 @@
 #include <vector>
 #include <wrl/client.h>
 #pragma comment(lib, "winmm.lib")
+#include <QGuiApplication>
+#include <QWindow>
 #include "../core/audio/AudioEngineCore.h"
 #include "../core/control/PanicSwitch.h"
 #include "../core/control/SystemWatchdog.h"
@@ -1300,6 +1302,17 @@ void AudioEngineBridge::stopRecording() {
     emit recordingActiveChanged();
 
     RealtimeLogger::getInstance().log("Recording stopped.");
+}
+
+void AudioEngineBridge::toggleWindow(const QString& title) {
+    const auto windows = QGuiApplication::allWindows();
+    for (auto* w : windows) {
+        if (w->title() == title) {
+            w->setVisible(!w->isVisible());
+            return;
+        }
+    }
+    RealtimeLogger::getInstance().log("toggleWindow: window not found \"" + title.toStdString() + "\"");
 }
 
 void AudioEngineBridge::configureShowChannels(int numInputs, int numBuses, int numAuxes, int numDCAs) {

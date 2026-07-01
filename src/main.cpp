@@ -15,6 +15,7 @@
 #include "core/control/WindowStateStore.h"
 #include "core/control/ShowfileManager.h"
 #include <filesystem>
+#include <vector>
 
 void qtMessageHandler(QtMsgType type, const QMessageLogContext &context, const QString &msg) {
     std::string levelPrefix;
@@ -66,43 +67,56 @@ int main(int argc, char *argv[]) {
     qmlRegisterType<WindowStateStore>("Overwatch.Core", 1, 0, "WindowStateStore");
     qmlRegisterUncreatableType<LocalMediaDeck>("Overwatch.Core", 1, 0, "LocalMediaDeck", "Cannot instantiate LocalMediaDeck directly");
 
-    QQmlApplicationEngine engine;
-
-    // Instantiate persistent bridges as context properties if needed globally,
-    // or let individual windows instantiate them as registered types.
-    // Given the architecture, we want shared state, so context properties are better.
+    // Shared bridges — one instance per service, shared across all windows via context properties
     AudioEngineBridge audioBridge;
     ShowBuilderBridge showBuilderBridge;
 
-    engine.rootContext()->setContextProperty("audioCore", &audioBridge);
-    engine.rootContext()->setContextProperty("showBuilder", &showBuilderBridge);
+    struct WindowDef {
+        const char* name;
+        const char* localPath;
+        const char* qrcPath;
+    };
+    const WindowDef windows[] = {
+        {"MasterLauncher", "F:/Drive/scripts/overwatch_studio/src/ui/MasterLauncher.qml", "qrc:/qt/qml/overwatch_studio/src/ui/MasterLauncher.qml"},
+        {"AudioConsole",   "F:/Drive/scripts/overwatch_studio/src/ui/AudioConsole.qml",   "qrc:/qt/qml/overwatch_studio/src/ui/AudioConsole.qml"},
+        {"VideoSwitcher",  "F:/Drive/scripts/overwatch_studio/src/ui/VideoSwitcher.qml",  "qrc:/qt/qml/overwatch_studio/src/ui/VideoSwitcher.qml"},
+        {"ShowBuilder",    "F:/Drive/scripts/overwatch_studio/src/ui/ShowBuilder.qml",    "qrc:/qt/qml/overwatch_studio/src/ui/ShowBuilder.qml"},
+    };
 
-    engine.addImportPath("qrc:/");
-    engine.addImportPath("qrc:/qt/qml/");
+    std::vector<QQmlApplicationEngine*> engines;
+    for (const auto& w : windows) {
+        auto* eng = new QQmlApplicationEngine(&app);
+        eng->rootContext()->setContextProperty("audioCore", &audioBridge);
+        eng->rootContext()->setContextProperty("showBuilder", &showBuilderBridge);
+        eng->addImportPath("qrc:/");
+        eng->addImportPath("qrc:/qt/qml/");
 
-    QString localPath = "F:/Drive/scripts/overwatch_studio/src/ui/MasterLauncher.qml";
-    QUrl url;
-    if (QFile::exists(localPath)) {
-        url = QUrl::fromLocalFile(localPath);
-        RealtimeLogger::getInstance().log("Found local MasterLauncher.qml. Loading from filesystem: " + url.toString().toStdString());
-    } else {
-        url = QUrl(u"qrc:/qt/qml/overwatch_studio/src/ui/MasterLauncher.qml"_qs);
-        RealtimeLogger::getInstance().log("Local MasterLauncher.qml not found. Loading from QRC: " + url.toString().toStdString());
+        QString localPath = QString::fromLatin1(w.localPath);
+        QUrl url;
+        if (QFile::exists(localPath)) {
+            url = QUrl::fromLocalFile(localPath);
+        } else {
+            url = QUrl(QString::fromLatin1(w.qrcPath));
+        }
+        RealtimeLogger::getInstance().log(std::string("Loading ") + w.name + ": " + url.toString().toStdString());
+
+        QObject::connect(eng, &QQmlApplicationEngine::objectCreated,
+            &app, [w, url](QObject *obj, const QUrl &objUrl) {
+                if (!obj) {
+                    RealtimeLogger::getInstance().log(std::string("FATAL: ") + w.name + " failed to load: " + objUrl.toString().toStdString());
+                } else {
+                    RealtimeLogger::getInstance().log(std::string("SUCCESS: ") + w.name + " loaded.");
+                }
+            }, Qt::QueuedConnection);
+
+        eng->load(url);
+        engines.push_back(eng);
     }
 
-    QObject::connect(&engine, &QQmlApplicationEngine::objectCreated,
-        &app, [url](QObject *obj, const QUrl &objUrl) {
-            if (!obj) {
-                RealtimeLogger::getInstance().log("FATAL: QQmlApplicationEngine failed to create QML object for URL: " + objUrl.toString().toStdString());
-                QCoreApplication::exit(-1);
-            } else {
-                RealtimeLogger::getInstance().log("SUCCESS: QML object created successfully for URL: " + objUrl.toString().toStdString());
-            }
-        }, Qt::QueuedConnection);
-    
-    engine.load(url);
-
     int result = app.exec();
+
+    // Cleanup engines
+    for (auto* e : engines) delete e;
 
     // Shutdown background watchdog and logger threads safely before exit
     SystemWatchdog::getInstance().stop();
