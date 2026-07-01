@@ -28,6 +28,54 @@ find_package(GTest REQUIRED)
 find_package(readerwriterqueue CONFIG REQUIRED)
 find_package(SQLite3 REQUIRED)
 find_package(Qt6 COMPONENTS Core Gui Qml Quick QuickControls2 REQUIRED)
+# FFmpeg - vcpkg doesn't provide CMake config, use find_library instead
+find_path(FFMPEG_AVFORMAT_INCLUDE_DIR NAMES libavformat/avformat.h
+    HINTS "${CMAKE_BINARY_DIR}/vcpkg_installed/x64-windows/include"
+    REQUIRED)
+find_library(FFMPEG_AVFORMAT_LIBRARY NAMES avformat
+    HINTS "${CMAKE_BINARY_DIR}/vcpkg_installed/x64-windows/lib"
+    REQUIRED)
+find_library(FFMPEG_AVCODEC_LIBRARY NAMES avcodec
+    HINTS "${CMAKE_BINARY_DIR}/vcpkg_installed/x64-windows/lib"
+    REQUIRED)
+find_library(FFMPEG_AVUTIL_LIBRARY NAMES avutil
+    HINTS "${CMAKE_BINARY_DIR}/vcpkg_installed/x64-windows/lib"
+    REQUIRED)
+find_library(FFMPEG_SWSCALE_LIBRARY NAMES swscale
+    HINTS "${CMAKE_BINARY_DIR}/vcpkg_installed/x64-windows/lib"
+    REQUIRED)
+
+add_library(FFMPEG::avformat UNKNOWN IMPORTED)
+set_target_properties(FFMPEG::avformat PROPERTIES
+    IMPORTED_LOCATION "${FFMPEG_AVFORMAT_LIBRARY}"
+    INTERFACE_INCLUDE_DIRECTORIES "${FFMPEG_AVFORMAT_INCLUDE_DIR}"
+)
+add_library(FFMPEG::avcodec UNKNOWN IMPORTED)
+set_target_properties(FFMPEG::avcodec PROPERTIES
+    IMPORTED_LOCATION "${FFMPEG_AVCODEC_LIBRARY}"
+    INTERFACE_INCLUDE_DIRECTORIES "${FFMPEG_AVFORMAT_INCLUDE_DIR}"
+)
+add_library(FFMPEG::avutil UNKNOWN IMPORTED)
+set_target_properties(FFMPEG::avutil PROPERTIES
+    IMPORTED_LOCATION "${FFMPEG_AVUTIL_LIBRARY}"
+    INTERFACE_INCLUDE_DIRECTORIES "${FFMPEG_AVFORMAT_INCLUDE_DIR}"
+)
+add_library(FFMPEG::swscale UNKNOWN IMPORTED)
+set_target_properties(FFMPEG::swscale PROPERTIES
+    IMPORTED_LOCATION "${FFMPEG_SWSCALE_LIBRARY}"
+    INTERFACE_INCLUDE_DIRECTORIES "${FFMPEG_AVFORMAT_INCLUDE_DIR}"
+)
+message(STATUS "Found FFmpeg: ${FFMPEG_AVFORMAT_LIBRARY}")
+
+# oscpack - vcpkg only ships release builds, use for both Debug and Release
+# ponytail: all-config oscpack, install debug variant if needed later
+add_library(oscpack::oscpack UNKNOWN IMPORTED)
+set_target_properties(oscpack::oscpack PROPERTIES
+    IMPORTED_LOCATION "${CMAKE_BINARY_DIR}/vcpkg_installed/x64-windows/lib/oscpack.lib"
+    IMPORTED_LOCATION_DEBUG "${CMAKE_BINARY_DIR}/vcpkg_installed/x64-windows/lib/oscpack.lib"
+    INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_BINARY_DIR}/vcpkg_installed/x64-windows/include"
+)
+message(STATUS "Found oscpack: ${OSCPACK_LIBRARY}")
 
 # If JUCE is available as a submodule, compile it. Otherwise configure headers mock.
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/libs/juce/CMakeLists.txt")
@@ -52,16 +100,23 @@ target_link_libraries(overwatch_engine INTERFACE
     libzip::zip
 )
 
+target_link_libraries(overwatch_engine INTERFACE
+    FFMPEG::avformat
+    FFMPEG::avcodec
+    FFMPEG::avutil
+    FFMPEG::swscale
+)
+
 # Compiler Optimizations for MSVC & Clang/GCC
 if(MSVC)
     target_compile_options(overwatch_engine INTERFACE
-        /O2             # Maximum Speed Optimization
-        /Ot             # Favor Fast Code
+        $<$<CONFIG:Release>:/O2>   # Maximum Speed Optimization (Release only)
+        $<$<CONFIG:Release>:/Ot>   # Favor Fast Code (Release only)
+        $<$<CONFIG:Release>:/GL>   # LTCG (Release only)
         /fp:fast        # Fast Floating-Point Math Model
         /arch:AVX2      # Auto-Vectorize AVX2 Instructions
         /Gw             # Optimize Global Data (linker optimization)
         /Gy             # Enable Function-Level Linking
-        /GL             # Enable Whole Program Optimization (LTCG)
     )
 else()
     target_compile_options(overwatch_engine INTERFACE
@@ -97,9 +152,18 @@ add_executable(AudioEngineTests
     src/core/audio/WASAPIDeviceWorker.h
     src/core/audio/WindowsProcessCapture.cpp
     src/core/audio/WindowsProcessCapture.h
-    src/core/video/WindowsGraphicsCapture.cpp
+    src/core/video/VideoEngineCore.cpp
+    src/core/video/FFmpegCaptureSource.cpp
+    src/core/video/FFmpegCaptureSource.h
+    src/core/video/VideoCaptureManager.cpp
+    src/core/video/VideoCaptureManager.h
     src/ui/LocalMediaDeck.cpp
     src/ui/LocalMediaDeck.h
+    src/core/control/ShowfileManager.cpp
+    src/core/control/ShowfileManager.h
+    src/core/control/ExternalControlSurfaceManager.cpp
+    src/core/control/ExternalControlSurfaceManager.h
+    src/core/control/WindowStateStore.h
 )
 target_link_libraries(AudioEngineTests PRIVATE
     overwatch_engine
@@ -113,12 +177,15 @@ target_link_libraries(AudioEngineTests PRIVATE
     mmdevapi
     Qt6::Core
     Qt6::Gui
+    oscpack::oscpack
+    ws2_32
+    winmm
 )
 add_test(NAME AudioEngineTests COMMAND AudioEngineTests)
 
 
 # --- MVP Executable ---
-add_executable(overwatch_studio 
+add_executable(overwatch_studio
     src/main.cpp
     src/ui/AudioEngineBridge.cpp
     src/ui/AudioEngineBridge.h
@@ -132,6 +199,15 @@ add_executable(overwatch_studio
     src/core/audio/WASAPIDeviceWorker.h
     src/ui/LocalMediaDeck.cpp
     src/ui/LocalMediaDeck.h
+    src/core/control/ShowfileManager.cpp
+    src/core/control/ShowfileManager.h
+    src/core/control/ExternalControlSurfaceManager.cpp
+    src/core/control/ExternalControlSurfaceManager.h
+    src/core/control/WindowStateStore.h
+    src/core/video/FFmpegCaptureSource.cpp
+    src/core/video/FFmpegCaptureSource.h
+    src/core/video/VideoCaptureManager.cpp
+    src/core/video/VideoCaptureManager.h
 )
 
 qt_add_qml_module(overwatch_studio
@@ -149,6 +225,9 @@ target_link_libraries(overwatch_studio PRIVATE
     simdjson::simdjson
     ole32
     mmdevapi
+    oscpack::oscpack
+    ws2_32
+    winmm
 )
 
 set_target_properties(overwatch_studio PROPERTIES WIN32_EXECUTABLE ON)
