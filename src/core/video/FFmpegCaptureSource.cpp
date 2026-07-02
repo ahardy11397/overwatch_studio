@@ -1,5 +1,6 @@
 #include "FFmpegCaptureSource.h"
 #include <d3d11.h>
+#include <wrl/client.h>
 
 extern "C" {
 #include <libavformat/avformat.h>
@@ -7,6 +8,8 @@ extern "C" {
 #include <libavutil/imgutils.h>
 #include <libswscale/swscale.h>
 }
+
+using Microsoft::WRL::ComPtr;
 
 struct FFmpegCaptureSource::FFmpegState {
     AVFormatContext* formatCtx = nullptr;
@@ -37,7 +40,7 @@ bool FFmpegCaptureSource::open(const std::string& url, ID3D11Device* device) noe
 
     AVDictionary* opts = nullptr;
     av_dict_set(&opts, "rtsp_transport", "tcp", 0);
-    av_dict_set(&opts, "stimeout", "5000000", 0); // 5s timeout
+    av_dict_set(&opts, "stimeout", "3000000", 0); // 3s timeout
 
     if (avformat_open_input(&m_state->formatCtx, url.c_str(), nullptr, &opts) != 0) {
         close();
@@ -62,28 +65,17 @@ bool FFmpegCaptureSource::open(const std::string& url, ID3D11Device* device) noe
 
     AVCodecParameters* codecpar = m_state->formatCtx->streams[m_state->videoStreamIndex]->codecpar;
     const AVCodec* codec = avcodec_find_decoder(codecpar->codec_id);
-    if (!codec) {
-        close();
-        return false;
-    }
+    if (!codec) { close(); return false; }
 
     m_state->codecCtx = avcodec_alloc_context3(codec);
-    if (!m_state->codecCtx) {
-        close();
-        return false;
-    }
     avcodec_parameters_to_context(m_state->codecCtx, codecpar);
-    if (avcodec_open2(m_state->codecCtx, codec, nullptr) < 0) {
-        close();
-        return false;
-    }
+    if (avcodec_open2(m_state->codecCtx, codec, nullptr) < 0) { close(); return false; }
 
     m_width = m_state->codecCtx->width;
     m_height = m_state->codecCtx->height;
 
     m_state->frame = av_frame_alloc();
     m_state->rgbFrame = av_frame_alloc();
-
     return true;
 }
 
@@ -95,81 +87,76 @@ void FFmpegCaptureSource::close() noexcept {
         if (m_state->frame) av_frame_free(&m_state->frame);
         if (m_state->codecCtx) avcodec_free_context(&m_state->codecCtx);
         if (m_state->formatCtx) avformat_close_input(&m_state->formatCtx);
+        avformat_network_deinit();
         delete m_state;
         m_state = nullptr;
     }
-    if (m_texture) {
-        m_texture->Release();
-        m_texture = nullptr;
-    }
+    if (m_texture) { m_texture->Release(); m_texture = nullptr; }
 }
 
 bool FFmpegCaptureSource::start(FrameCallback callback) noexcept {
     if (!m_state || m_running.load()) return false;
     m_callback = std::move(callback);
     m_running.store(true);
-    m_thread = std::thread(&FFmpegCaptureSource::captureLoop, this, m_device);
+    m_thread = std::thread(&FFmpegCaptureSource::captureLoop, this);
     return true;
 }
 
 void FFmpegCaptureSource::stop() noexcept {
     m_running.store(false);
-    if (m_thread.joinable()) {
-        m_thread.join();
-    }
+    if (m_thread.joinable()) m_thread.join();
 }
 
-void FFmpegCaptureSource::captureLoop(ID3D11Device* device) noexcept {
-    D3D11_TEXTURE2D_DESC texDesc = {};
-    texDesc.Width = static_cast<UINT>(m_width);
-    texDesc.Height = static_cast<UINT>(m_height);
-    texDesc.MipLevels = 1;
-    texDesc.ArraySize = 1;
-    texDesc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
-    texDesc.SampleDesc.Count = 1;
-    texDesc.Usage = D3D11_USAGE_DYNAMIC;
-    texDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-    texDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+void FFmpegCaptureSource::captureLoop() noexcept {
+    // Create D3D11 staging texture for YUV->RGB conversion output
+    D3D11_TEXTURE2D_DESC desc = {};
+    desc.Width = static_cast<UINT>(m_width);
+    desc.Height = static_cast<UINT>(m_height);
+    desc.MipLevels = 1;
+    desc.ArraySize = 1;
+    desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    desc.SampleDesc.Count = 1;
+    desc.Usage = D3D11_USAGE_DYNAMIC;
+    desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
 
-    HRESULT hr = device->CreateTexture2D(&texDesc, nullptr, &m_texture);
-    if (FAILED(hr)) {
-        m_running.store(false);
-        return;
-    }
+    ComPtr<ID3D11Device> device;
+    m_device->AddRef();
+    device.Attach(m_device);
 
-    ID3D11DeviceContext* ctx = nullptr;
-    device->GetImmediateContext(&ctx);
+    ComPtr<ID3D11DeviceContext> ctx;
+    device->GetImmediateContext(ctx.GetAddressOf());
 
-    // ponytail: single-threaded decode loop, threaded decode if perf matters
+    HRESULT hr = device->CreateTexture2D(&desc, nullptr, &m_texture);
+    if (FAILED(hr)) { m_running.store(false); return; }
+
     m_state->swsCtx = sws_getContext(
         m_width, m_height, m_state->codecCtx->pix_fmt,
         m_width, m_height, AV_PIX_FMT_BGRA,
         SWS_BILINEAR, nullptr, nullptr, nullptr
     );
+    if (!m_state->swsCtx) { m_running.store(false); return; }
 
     int rgbBufSize = av_image_alloc(
         m_state->rgbFrame->data, m_state->rgbFrame->linesize,
-        m_width, m_height, AV_PIX_FMT_BGRA, 32);
+        m_width, m_height, AV_PIX_FMT_BGRA, 32
+    );
+    if (rgbBufSize < 0) { m_running.store(false); return; }
 
-    AVPacket pkt;
-    av_init_packet(&pkt);
+    AVPacket* packet = av_packet_alloc();
+    if (!packet) { m_running.store(false); return; }
 
-    while (m_running.load(std::memory_order_relaxed)) {
-        int ret = av_read_frame(m_state->formatCtx, &pkt);
+    while (m_running.load()) {
+        int ret = av_read_frame(m_state->formatCtx, packet);
         if (ret < 0) {
-            // ponytail: EOF or error, loop restarts for live streams
-            if (ret == AVERROR_EOF && m_state->formatCtx->pb &&
-                (m_state->formatCtx->iformat->flags & AVFMT_NOFILE) == 0) {
-                // ponytail: file source EOF, stop
-                break;
-            }
+            // Stream ended or error — wait before retry for live streams
+            if (ret == AVERROR_EOF) break;
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            av_packet_unref(&pkt);
             continue;
         }
 
-        if (pkt.stream_index == m_state->videoStreamIndex) {
-            avcodec_send_packet(m_state->codecCtx, &pkt);
+        if (packet->stream_index == m_state->videoStreamIndex) {
+            avcodec_send_packet(m_state->codecCtx, packet);
 
             while (avcodec_receive_frame(m_state->codecCtx, m_state->frame) == 0) {
                 sws_scale(m_state->swsCtx,
@@ -179,27 +166,22 @@ void FFmpegCaptureSource::captureLoop(ID3D11Device* device) noexcept {
 
                 D3D11_MAPPED_SUBRESOURCE mapped;
                 if (SUCCEEDED(ctx->Map(m_texture, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) {
-                    const uint8_t* src = m_state->rgbFrame->data[0];
-                    uint8_t* dst = static_cast<uint8_t*>(mapped.pData);
+                    uint8_t* src = m_state->rgbFrame->data[0];
+                    int srcStride = m_state->rgbFrame->linesize[0];
                     for (int y = 0; y < m_height; ++y) {
-                        memcpy(dst + y * mapped.RowPitch,
-                               src + y * m_state->rgbFrame->linesize[0],
-                               static_cast<size_t>(m_width) * 4);
+                        memcpy(static_cast<uint8_t*>(mapped.pData) + y * mapped.RowPitch,
+                               src + y * srcStride, static_cast<size_t>(m_width * 4));
                     }
                     ctx->Unmap(m_texture, 0);
                 }
 
                 uint64_t pts = m_state->frameCounter++;
-                if (m_callback) {
-                    m_callback(m_texture, pts);
-                }
+                if (m_callback) m_callback(m_texture, pts);
             }
         }
-        av_packet_unref(&pkt);
+        av_packet_unref(packet);
     }
 
-    if (ctx) ctx->Release();
     av_freep(&m_state->rgbFrame->data[0]);
-    av_packet_unref(&pkt);
-    m_running.store(false);
+    av_packet_free(&packet);
 }

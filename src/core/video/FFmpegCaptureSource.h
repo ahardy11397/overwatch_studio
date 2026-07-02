@@ -29,7 +29,7 @@ public:
     int getHeight() const noexcept { return m_height; }
 
 private:
-    void captureLoop(ID3D11Device* device) noexcept;
+    void captureLoop() noexcept;
 
     std::string m_url;
     ID3D11Device* m_device = nullptr;

@@ -1,0 +1,13 @@
+{
+  "name": "overwatch-studio",
+  "version-string": "0.1.0",
+  "dependencies": [
+    "soxr",
+    "simdjson",
+    "libzip",
+    "gtest",
+    "sqlite3",
+    "readerwriterqueue",
+    "ffmpeg"
+  ]
+}

@@ -69,13 +69,15 @@ message(STATUS "Found FFmpeg: ${FFMPEG_AVFORMAT_LIBRARY}")
 
 # oscpack - vcpkg only ships release builds, use for both Debug and Release
 # ponytail: all-config oscpack, install debug variant if needed later
-add_library(oscpack::oscpack UNKNOWN IMPORTED)
-set_target_properties(oscpack::oscpack PROPERTIES
-    IMPORTED_LOCATION "${CMAKE_SOURCE_DIR}/vcpkg_installed/x64-windows/lib/oscpack.lib"
-    IMPORTED_LOCATION_DEBUG "${CMAKE_SOURCE_DIR}/vcpkg_installed/x64-windows/lib/oscpack.lib"
-    INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_SOURCE_DIR}/vcpkg_installed/x64-windows/include"
-)
-message(STATUS "Found oscpack: ${OSCPACK_LIBRARY}")
+if(NOT TARGET oscpack::oscpack)
+    add_library(oscpack::oscpack UNKNOWN IMPORTED)
+    set_target_properties(oscpack::oscpack PROPERTIES
+        IMPORTED_LOCATION "${CMAKE_SOURCE_DIR}/vcpkg_installed/x64-windows/lib/oscpack.lib"
+        IMPORTED_LOCATION_DEBUG "${CMAKE_SOURCE_DIR}/vcpkg_installed/x64-windows/lib/oscpack.lib"
+        INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_SOURCE_DIR}/vcpkg_installed/x64-windows/include"
+    )
+endif()
+message(STATUS "Found oscpack: ${CMAKE_SOURCE_DIR}/vcpkg_installed/x64-windows/lib/oscpack.lib")
 
 # If JUCE is available as a submodule, compile it. Otherwise configure headers mock.
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/libs/juce/CMakeLists.txt")
@@ -105,6 +107,9 @@ target_link_libraries(overwatch_engine INTERFACE
     FFMPEG::avcodec
     FFMPEG::avutil
     FFMPEG::swscale
+    oscpack::oscpack
+    ws2_32
+    winmm
 )
 
 # Compiler Optimizations for MSVC & Clang/GCC
