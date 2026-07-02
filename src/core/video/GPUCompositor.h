@@ -348,15 +348,34 @@ public:
         inputTextures[index] = static_cast<ID3D11ShaderResourceView*>(textureHandle);
     }
 
+    /// Create render target for output compositing
+    HRESULT createOutputRenderTarget(UINT width, UINT height) noexcept {
+        D3D11_TEXTURE2D_DESC desc = {};
+        desc.Width = width;
+        desc.Height = height;
+        desc.MipLevels = 1;
+        desc.ArraySize = 1;
+        desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+        desc.SampleDesc.Count = 1;
+        desc.Usage = D3D11_USAGE_DEFAULT;
+        desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+
+        HRESULT hr = d3dDevice->CreateTexture2D(&desc, nullptr, outputTexture.ReleaseAndGetAddressOf());
+        if (FAILED(hr)) return hr;
+
+        hr = d3dDevice->CreateRenderTargetView(outputTexture.Get(), nullptr, outputRTV.ReleaseAndGetAddressOf());
+        if (FAILED(hr)) return hr;
+
+        // Also create SRV so this output can be used as input in subsequent passes
+        hr = d3dDevice->CreateShaderResourceView(outputTexture.Get(), nullptr, outputSRV.ReleaseAndGetAddressOf());
+        return hr;
+    }
+
     void REALTIME_SAFE process() noexcept {
         if (!d3dContext) return;
 
-        // Basic render process:
-        // 1. Set generic state
-        struct Vertex {
-            DirectX::XMFLOAT3 pos;
-            DirectX::XMFLOAT2 uv;
-        };
+        // Full-screen quad setup
+        struct Vertex { DirectX::XMFLOAT3 pos; DirectX::XMFLOAT2 uv; };
         UINT stride = sizeof(Vertex);
         UINT offset = 0;
         d3dContext->IASetVertexBuffers(0, 1, quadVB.GetAddressOf(), &stride, &offset);
@@ -364,9 +383,68 @@ public:
         d3dContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
         d3dContext->VSSetShader(quadVS.Get(), nullptr, 0);
 
-        // 2. Perform composition passes (placeholders for now)
-        // In a real implementation, we'd render to offscreen targets
+        // Set output render target
+        if (!outputRTV) return;
+        d3dContext->OMSetRenderTargets(1, outputRTV.GetAddressOf(), nullptr);
+
+        // Clear to black
+        float clearColor[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        d3dContext->ClearRenderTargetView(outputRTV.Get(), clearColor);
+
+        // Viewport
+        D3D11_VIEWPORT vp = {};
+        if (outputTexture) {
+            D3D11_TEXTURE2D_DESC desc;
+            outputTexture->GetDesc(&desc);
+            vp.Width = static_cast<float>(desc.Width);
+            vp.Height = static_cast<float>(desc.Height);
+            vp.MaxDepth = 1.0f;
+            d3dContext->RSSetViewports(1, &vp);
+        }
+
+        // Simple pass-through: render first input texture with proc amp
+        // ponytail: single-pass pipeline, multi-pass when downstream keyer/blend needed
+        ID3D11ShaderResourceView* activeInput = inputTextures[0];
+        if (!activeInput) {
+            // No input texture — render nothing (output stays black)
+            return;
+        }
+
+        d3dContext->PSSetShader(procAmpPS.Get(), nullptr, 0);
+        // Update proc amp constant buffer with current values
+        D3D11_MAPPED_SUBRESOURCE mapped;
+        if (SUCCEEDED(d3dContext->Map(procAmpCb.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) {
+            auto* buf = static_cast<ProcAmpBuffer*>(mapped.pData);
+            buf->brightness = m_brightness;
+            buf->contrast = m_contrast;
+            buf->saturation = m_saturation;
+            buf->gamma = m_gamma;
+            buf->hueAngle = m_hueAngle;
+            d3dContext->Unmap(procAmpCb.Get(), 0);
+        }
+        d3dContext->PSSetConstantBuffers(0, 1, procAmpCb.GetAddressOf());
+        d3dContext->PSSetShaderResources(0, 1, &activeInput);
+
+        // Set default sampler
+        ID3D11SamplerState* sampler = nullptr;
+        d3dContext->PSSetSamplers(0, 1, &sampler);
+
+        // Draw the quad
+        d3dContext->Draw(4, 0);
+
+        // Clear SRV binding to avoid read-after-write hazards on next frame
+        ID3D11ShaderResourceView* nullSRV[1] = {nullptr};
+        d3dContext->PSSetShaderResources(0, 1, nullSRV);
     }
+
+    ID3D11Texture2D* getOutputTexture() const noexcept { return outputTexture.Get(); }
+
+    // Proc amp params
+    float m_brightness = 0.0f;
+    float m_contrast = 1.0f;
+    float m_saturation = 1.0f;
+    float m_gamma = 1.0f;
+    float m_hueAngle = 0.0f;
 
     ID3D11ShaderResourceView* inputTextures[4] = {nullptr, nullptr, nullptr, nullptr};
 
@@ -389,4 +467,8 @@ public:
 
     ComPtr<ID3D11InputLayout> quadInputLayout;
     ComPtr<ID3D11Buffer> quadVB;
+
+    ComPtr<ID3D11Texture2D> outputTexture;
+    ComPtr<ID3D11RenderTargetView> outputRTV;
+    ComPtr<ID3D11ShaderResourceView> outputSRV;
 };

@@ -44,6 +44,9 @@ find_library(FFMPEG_AVUTIL_LIBRARY NAMES avutil
 find_library(FFMPEG_SWSCALE_LIBRARY NAMES swscale
     HINTS "${CMAKE_SOURCE_DIR}/vcpkg_installed/x64-windows/lib"
     REQUIRED)
+find_library(FFMPEG_SWRESAMPLE_LIBRARY NAMES swresample
+    HINTS "${CMAKE_SOURCE_DIR}/vcpkg_installed/x64-windows/lib"
+    REQUIRED)
 
 add_library(FFMPEG::avformat UNKNOWN IMPORTED)
 set_target_properties(FFMPEG::avformat PROPERTIES
@@ -63,6 +66,11 @@ set_target_properties(FFMPEG::avutil PROPERTIES
 add_library(FFMPEG::swscale UNKNOWN IMPORTED)
 set_target_properties(FFMPEG::swscale PROPERTIES
     IMPORTED_LOCATION "${FFMPEG_SWSCALE_LIBRARY}"
+    INTERFACE_INCLUDE_DIRECTORIES "${FFMPEG_AVFORMAT_INCLUDE_DIR}"
+)
+add_library(FFMPEG::swresample UNKNOWN IMPORTED)
+set_target_properties(FFMPEG::swresample PROPERTIES
+    IMPORTED_LOCATION "${FFMPEG_SWRESAMPLE_LIBRARY}"
     INTERFACE_INCLUDE_DIRECTORIES "${FFMPEG_AVFORMAT_INCLUDE_DIR}"
 )
 message(STATUS "Found FFmpeg: ${FFMPEG_AVFORMAT_LIBRARY}")
@@ -107,6 +115,7 @@ target_link_libraries(overwatch_engine INTERFACE
     FFMPEG::avcodec
     FFMPEG::avutil
     FFMPEG::swscale
+    FFMPEG::swresample
     oscpack::oscpack
     ws2_32
     winmm

@@ -1,47 +1,34 @@
 #include "WindowsGraphicsCapture.h"
 #include "../control/RealtimeLogger.h"
 
-// C++/WinRT SDK component not available on this build machine.
-// WGC capture is compiled as a stub that logs and returns false.
-// To enable: install Windows SDK with C++/WinRT support, then rebuild.
-//
-// Upgrade path:
-//   1. Open "Visual Studio Installer" → Modify → check "C++/WinRT" under
-//      "Windows SDK" components, or install via standalone Windows SDK installer.
-//   2. The /ZW compiler flag and windowsapp/runtimeobject linkage handle the rest.
+// ponytail: WGC stub — C++/WinRT COM interop needs SDK component install
+// Interactive WGC with C++/WinRT requires the Windows SDK C++/WinRT component.
+// The FFmpegCaptureSource path (RTSP/NDI/file) works without it.
+// To enable: install C++/WinRT via Visual Studio Installer → Windows SDK → C++/WinRT
 
 namespace overwatch::video {
 
 struct WindowsGraphicsCapture::Impl {
-    // No-op stub — C++/WinRT SDK not available
+    // No-op stub
 };
 
 WindowsGraphicsCapture::WindowsGraphicsCapture(ID3D11Device* device)
-    : m_impl(nullptr)
-{
-    RealtimeLogger::getInstance().log(
-        "WGC: C++/WinRT not available, capture disabled. "
-        "Install Windows SDK with C++/WinRT support to enable.");
+    : m_impl(nullptr) {
+    RealtimeLogger::getInstance().log("WGC: C++/WinRT not available — FFmpeg path active");
 }
 
 WindowsGraphicsCapture::~WindowsGraphicsCapture() = default;
 
-bool WindowsGraphicsCapture::startWindowCapture(HWND /*hwnd*/, FrameCallback /*callback*/) {
-    RealtimeLogger::getInstance().log("WGC: startWindowCapture — C++/WinRT not available.");
+bool WindowsGraphicsCapture::startWindowCapture(HWND, FrameCallback) {
     return false;
 }
 
-bool WindowsGraphicsCapture::startMonitorCapture(HMONITOR /*hmonitor*/, FrameCallback /*callback*/) {
-    RealtimeLogger::getInstance().log("WGC: startMonitorCapture — C++/WinRT not available.");
+bool WindowsGraphicsCapture::startMonitorCapture(HMONITOR, FrameCallback) {
     return false;
 }
 
-void WindowsGraphicsCapture::stop() {
-    // no-op stub
-}
+void WindowsGraphicsCapture::stop() {}
 
-bool WindowsGraphicsCapture::isActive() const {
-    return false;
-}
+bool WindowsGraphicsCapture::isActive() const { return false; }
 
 } // namespace overwatch::video

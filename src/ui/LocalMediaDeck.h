@@ -4,6 +4,8 @@
 #include <QImage>
 #include <atomic>
 #include <mutex>
+#include <vector>
+#include <cstdint>
 
 class LocalMediaDeck : public QObject {
     Q_OBJECT
@@ -42,7 +44,7 @@ public:
     Q_INVOKABLE void stop();
     Q_INVOKABLE void load(const QString& path);
 
-    // Real-time audio callback (lock-free)
+    // Real-time audio callback (lock-free, reads from decoded ring buffer)
     void readPlaybackSamples(uint32_t patchIdx, float* destBuffer, size_t numSamples) noexcept;
 
     // Video canvas frame painter (invoked by VideoCanvasMock)
@@ -59,9 +61,11 @@ signals:
 
 private:
     void updateTimerTick();
+    bool decodeFile(const QString& path);
+    void clearDecoded();
 
     std::atomic<bool> m_playing{false};
-    std::atomic<int> m_duration{120}; // default mock duration 120s
+    std::atomic<int> m_duration{0};
     std::atomic<int> m_position{0};
     std::atomic<double> m_volume{1.0};
     std::atomic<bool> m_loop{true};
@@ -69,8 +73,13 @@ private:
     mutable std::mutex m_fileMutex;
     QString m_filePath;
 
-    double m_phaseL = 0.0;
-    double m_phaseR = 0.0;
-
     class QTimer* m_tickTimer = nullptr;
+
+    // Decoded audio data and state
+    // ponytail: full-file decode, stream decode when file sizes exceed 100MB
+    std::mutex m_decodeMutex;
+    std::vector<float> m_decodedAudio; // interleaved stereo float samples
+    int m_sampleRate = 48000;
+    int m_numChannels = 2;
+    size_t m_readCursor = 0; // sample index (per channel), not guarded by mutex
 };
