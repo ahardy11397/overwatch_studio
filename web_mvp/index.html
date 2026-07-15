@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Overwatch Studio (MVP Dashboard)</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="dashboard-container">
+        <!-- Window 1: Audio Console -->
+        <div class="window audio-window">
+            <div class="window-header">
+                <h2>Window 1: Audio Core Engine</h2>
+                <div class="status-indicator">
+                    <span class="dot active"></span> <span class="status-text">DSP Active (< 400µs)</span>
+                </div>
+            </div>
+            <div class="fader-bay">
+                <!-- Channel Strip -->
+                <div class="channel-strip">
+                    <div class="meter-bar">
+                        <div class="meter-fill" id="meter1"></div>
+                    </div>
+                    <div class="fader-track" id="track1">
+                        <div class="fader-cap" id="fader1"></div>
+                    </div>
+                    <div class="channel-label">CH 1</div>
+                </div>
+                <!-- Channel 2 -->
+                <div class="channel-strip">
+                    <div class="meter-bar"><div class="meter-fill" id="meter2" style="height: 40%; background: #00d084;"></div></div>
+                    <div class="fader-track"><div class="fader-cap" style="bottom: 40%"></div></div>
+                    <div class="channel-label">CH 2</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Window 2: Video Switcher -->
+        <div class="window video-window">
+            <div class="window-header">
+                <h2>Window 2: Video Switcher (SDVS)</h2>
+                <div class="status-indicator">
+                    <span class="dot active" style="background: #00a0f0;"></span> <span class="status-text">Genlock Locked (60fps)</span>
+                </div>
+            </div>
+            <div class="multiview-grid">
+                <div class="video-feed preview">Preview (Cam 1)</div>
+                <div class="video-feed program">Program (Live)</div>
+                <div class="video-feed source">Cam 1 (1080p)</div>
+                <div class="video-feed source">Cam 2 (1080p)</div>
+            </div>
+            <div class="tbar-section">
+                <button class="cut-btn">CUT</button>
+                <button class="auto-btn">AUTO</button>
+                <div class="tbar-track">
+                    <div class="tbar-handle"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Window 3: Show Builder -->
+        <div class="window show-builder-window">
+            <div class="window-header">
+                <h2>Window 3: Show Builder</h2>
+                <div class="status-indicator">
+                    <span class="dot active" style="background: #f0b000;"></span> <span class="status-text">WAL Mode Active</span>
+                </div>
+            </div>
+            <div class="sandbox-content">
+                <div class="cue-list">
+                    <div class="cue-item active-cue">Cue 1: Intro Graphic</div>
+                    <div class="cue-item">Cue 2: Host Camera</div>
+                    <div class="cue-item">Cue 3: PiP Screen</div>
+                </div>
+                <button class="action-btn" id="loadBtn">Load .sds Archive</button>
+                <button class="action-btn secondary" id="saveBtn">Save Delta</button>
+            </div>
+        </div>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>

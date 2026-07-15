@@ -23,7 +23,36 @@ scratch/
 *.user
 *.suo
 
+# Machine-local MCP server config + startup helper
+.mcp.json
+_start_open_design.bat
+
 # Temp
 __pycache__/
 *.pyc
 .DS_Store
+
+# Temporary/debug files
+*.txt
+*.i
+*.obj
+*.wav
+
+# SQLite state files
+ui_sandbox.db
+ui_sandbox.db-shm
+ui_sandbox.db-wal
+
+# Generated outputs
+graphify-out/
+*.artifact.json
+
+# Tool configs
+.od-skills/
+.superpowers/
+
+# Historical QML scripts (not part of build)
+src/ui/fix_duplicates.py
+src/ui/update_main.py
+src/ui/update_main2.py
+src/ui/update_main3.py

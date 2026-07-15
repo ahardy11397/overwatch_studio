@@ -1,0 +1,843 @@
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Overwatch Studio // Main Console</title>
+  
+  <!-- Tailwind CSS is not requested, using raw modern CSS for layout and dark tech styling -->
+  <style>
+    :root {
+      --bg: oklch(14% 0.01 245);
+      --surface: oklch(18% 0.015 245);
+      --surface-hover: oklch(22% 0.02 245);
+      --fg: oklch(90% 0.005 245);
+      --muted: oklch(62% 0.01 245);
+      --border: oklch(26% 0.015 245);
+      --accent: oklch(72% 0.14 160); /* Cyan/teal accent */
+      --accent-red: oklch(62% 0.19 25); /* Emergency Red */
+      --font-family: ui-monospace, 'JetBrains Mono', 'IBM Plex Mono', Menlo, monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--fg);
+      font-family: var(--font-family);
+      font-size: 13px;
+      line-height: 1.5;
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Scrollbar styles */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: var(--bg);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--muted);
+    }
+
+    /* Grid helper classes */
+    .grid-lines {
+      background-size: 20px 20px;
+      background-image: 
+        linear-gradient(to right, var(--border) 1px, transparent 1px),
+        linear-gradient(to bottom, var(--border) 1px, transparent 1px);
+    }
+  </style>
+
+  <!-- React Core & Babel for component development -->
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+
+  <div id="root" style="height: 100%; display: flex; flex-direction: column;"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    // Default configuration for the console values
+    const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+      "maxDbRange": 12,
+      "defaultTransitionRate": 30,
+      "genlockFreq": 59.94
+    }/*EDITMODE-END*/;
+
+    function App() {
+      const [activeTab, setActiveTab] = useState('launcher');
+      const [isMonitorSecondary, setIsMonitorSecondary] = useState(false);
+      const [ftbActive, setFtbActive] = useState(false);
+      const [audioFaders, setAudioFaders] = useState([80, 70, 85, 60, 45, 90, 75, 50, 80]); // 8 channels + Master
+      const [pgmActive, setPgmActive] = useState(1); // Cam 1
+      const [pvwActive, setPvwActive] = useState(2); // Cam 2
+      const [transitionRate, setTransitionRate] = useState(TWEAK_DEFAULTS.defaultTransitionRate);
+      const [tbarProgress, setTbarProgress] = useState(0);
+      const [selectedAudioChan, setSelectedAudioChan] = useState(0);
+      const [dbLogs, setDbLogs] = useState([]);
+      const [cpuLoad, setCpuLoad] = useState(24);
+      const [gpuLoad, setGpuLoad] = useState(38);
+      const [eqSettings, setEqSettings] = useState([
+        { freq: 80, q: 0.7, gain: 0 },
+        { freq: 400, q: 1.0, gain: 0 },
+        { freq: 2500, q: 1.2, gain: 0 },
+        { freq: 8000, q: 0.7, gain: 0 }
+      ]);
+      
+      const logContainerRef = useRef(null);
+
+      // Check URL parameters to see if this is launched as a secondary monitor window
+      useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('monitor') === '2') {
+          setIsMonitorSecondary(true);
+          setActiveTab('switcher'); // Default to Switcher on Screen 2
+        }
+      }, []);
+
+      // Storage sync mechanism for multi-monitor operations
+      useEffect(() => {
+        const handleStorageChange = (e) => {
+          if (e.key === 'overwatch_ftb') {
+            setFtbActive(JSON.parse(e.newValue));
+          } else if (e.key === 'overwatch_pgm') {
+            setPgmActive(Number(e.newValue));
+          } else if (e.key === 'overwatch_pvw') {
+            setPvwActive(Number(e.newValue));
+          } else if (e.key === 'overwatch_audio_faders') {
+            setAudioFaders(JSON.parse(e.newValue));
+          }
+        };
+
+        window.addEventListener('storage', handleStorageChange);
+        
+        // Populate initial synced states
+        const savedFtb = localStorage.getItem('overwatch_ftb');
+        if (savedFtb !== null) setFtbActive(JSON.parse(savedFtb));
+        
+        const savedPgm = localStorage.getItem('overwatch_pgm');
+        if (savedPgm !== null) setPgmActive(Number(savedPgm));
+
+        const savedPvw = localStorage.getItem('overwatch_pvw');
+        if (savedPvw !== null) setPvwActive(Number(savedPvw));
+
+        const savedFaders = localStorage.getItem('overwatch_audio_faders');
+        if (savedFaders !== null) setAudioFaders(JSON.parse(savedFaders));
+
+        return () => window.removeEventListener('storage', handleStorageChange);
+      }, []);
+
+      // Update local storage to broadcast changes to other monitors
+      const updateFtb = (val) => {
+        setFtbActive(val);
+        localStorage.setItem('overwatch_ftb', JSON.stringify(val));
+      };
+
+      const updatePgm = (val) => {
+        setPgmActive(val);
+        localStorage.setItem('overwatch_pgm', String(val));
+      };
+
+      const updatePvw = (val) => {
+        setPvwActive(val);
+        localStorage.setItem('overwatch_pvw', String(val));
+      };
+
+      const updateFader = (index, val) => {
+        const newFaders = [...audioFaders];
+        newFaders[index] = val;
+        setAudioFaders(newFaders);
+        localStorage.setItem('overwatch_audio_faders', JSON.stringify(newFaders));
+      };
+
+      // Mock database logs simulation
+      useEffect(() => {
+        const initLogs = [
+          "sqlite3_open_v2: loaded db config from path [assets/shows/default.sds]",
+          "audio_engine_bridge: initialized DSP core channels 1-24 @ 48000Hz",
+          "gpu_compositor: bound DirectX 12 graphics adapter [NVIDIA GeForce RTX 4070]",
+          "video_switcher: multithreaded frame parser active, genlock locked at 59.94 fps",
+          "state_store: successfully restored main window geometry (1920x1080)",
+        ];
+        setDbLogs(initLogs);
+
+        const interval = setInterval(() => {
+          const mockStatements = [
+            `INSERT INTO show_log (timestamp, component, message) VALUES (datetime('now'), 'audio_dsp', 'Channel ${Math.floor(Math.random() * 8) + 1} fader set to ${Math.floor(Math.random() * 100)}%')`,
+            `UPDATE engine_telemetry SET value = '${(Math.random() * 5 + 20).toFixed(2)}' WHERE metric = 'cpu_usage'`,
+            `SELECT * FROM audio_crosspoint WHERE source_id = ${Math.floor(Math.random() * 4) + 1}`,
+            `COMMIT TRANSACTION: finalized state snapshot checkpoint`,
+            "video_engine_core: validated video packet sequence sync - drift: 0.02ms"
+          ];
+          
+          setDbLogs(prev => [...prev, mockStatements[Math.floor(Math.random() * mockStatements.length)]].slice(-100));
+          
+          // Randomize telemetry
+          setCpuLoad(Math.floor(Math.random() * 15) + 15);
+          setGpuLoad(Math.floor(Math.random() * 20) + 30);
+        }, 3000);
+
+        return () => clearInterval(interval);
+      }, []);
+
+      useEffect(() => {
+        if (logContainerRef.current) {
+          logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
+        }
+      }, [dbLogs, activeTab]);
+
+      // Launch secondary window
+      const handleSpawnMonitor = () => {
+        window.open(window.location.href.split('?')[0] + '?monitor=2', '_blank', 'width=1400,height=900,menubar=no,toolbar=no,location=no,status=no');
+      };
+
+      const handleExecuteCut = () => {
+        const temp = pgmActive;
+        updatePgm(pvwActive);
+        updatePvw(temp);
+      };
+
+      const handleExecuteAuto = () => {
+        let step = 0;
+        const interval = setInterval(() => {
+          step += 5;
+          setTbarProgress(step);
+          if (step >= 100) {
+            clearInterval(interval);
+            setTimeout(() => {
+              handleExecuteCut();
+              setTbarProgress(0);
+            }, 100);
+          }
+        }, 20);
+      };
+
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', backgroundColor: 'var(--bg)' }}>
+          {/* Header Panel */}
+          <header data-od-id="console-header" style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            padding: '10px 16px',
+            borderBottom: '1px solid var(--border)',
+            backgroundColor: 'var(--surface)',
+            height: '48px',
+            position: 'relative',
+            zIndex: 10
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+              <span style={{ fontWeight: 'bold', color: 'var(--accent)', letterSpacing: '1px' }}>
+                OVERWATCH STUDIO // {isMonitorSecondary ? 'MONITOR 2' : 'PRIMARY'}
+              </span>
+              <span style={{
+                fontSize: '11px',
+                padding: '2px 6px',
+                border: '1px solid var(--border)',
+                borderRadius: '3px',
+                color: 'var(--muted)'
+              }}>
+                BUILD: 0.1.0-win64
+              </span>
+            </div>
+
+            {ftbActive && (
+              <div style={{
+                position: 'absolute',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                backgroundColor: 'var(--accent-red)',
+                color: 'white',
+                padding: '4px 20px',
+                fontSize: '11px',
+                fontWeight: 'bold',
+                animation: 'blink 1s steps(2, start) infinite',
+                border: '1px solid white',
+                borderRadius: '3px'
+              }}>
+                [FTB ACTIVE - BLACKOUT OUTPUT]
+              </div>
+            )}
+            <style>{`
+              @keyframes blink {
+                to { visibility: hidden; }
+              }
+            `}</style>
+
+            <div style={{ display: 'flex', gap: '15px', alignItems: 'center', fontSize: '11px', color: 'var(--muted)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: 'var(--accent)' }}></span>
+                <span>GENLOCK: {TWEAK_DEFAULTS.genlockFreq}Hz</span>
+              </div>
+              <div>|</div>
+              <div>CPU: {cpuLoad}%</div>
+              <div>GPU: {gpuLoad}%</div>
+            </div>
+          </header>
+
+          {/* Top Tab Navigation */}
+          <div data-od-id="console-tabs" style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-end',
+            backgroundColor: 'var(--surface)',
+            borderBottom: '1px solid var(--border)',
+            height: '36px',
+            padding: '0 16px',
+            userSelect: 'none',
+            flexShrink: 0
+          }}>
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '2px', height: '100%' }}>
+              {[
+                { id: 'launcher', label: '01. MASTER LAUNCHER' },
+                { id: 'switcher', label: '02. VIDEO SWITCHER' },
+                { id: 'audio', label: '03. AUDIO CONSOLE' },
+                { id: 'database', label: '04. SHOW BUILDER' }
+              ].map(tab => {
+                const isActive = activeTab === tab.id;
+                return (
+                  <button 
+                    key={tab.id}
+                    data-od-id={`nav-${tab.id}`}
+                    onClick={() => setActiveTab(tab.id)} 
+                    style={{
+                      padding: '0 16px',
+                      height: '30px',
+                      backgroundColor: isActive ? 'var(--bg)' : 'transparent',
+                      border: '1px solid ' + (isActive ? 'var(--border)' : 'transparent'),
+                      borderBottom: isActive ? '1px solid var(--bg)' : 'none',
+                      borderTop: isActive ? '2px solid var(--accent)' : '1px solid transparent',
+                      color: isActive ? 'var(--fg)' : 'var(--muted)',
+                      cursor: 'pointer',
+                      fontFamily: 'var(--font-family)',
+                      fontSize: '11px',
+                      fontWeight: isActive ? 'bold' : 'normal',
+                      display: 'flex',
+                      alignItems: 'center',
+                      borderTopLeftRadius: '3px',
+                      borderTopRightRadius: '3px',
+                      zIndex: isActive ? 2 : 1,
+                      marginBottom: '-1px'
+                    }}>
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Right side: Multi-Monitor Control Panel */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', height: '100%', paddingBottom: '4px' }}>
+              <span style={{ fontSize: '9px', color: 'var(--muted)', letterSpacing: '0.5px' }}>MULTI-MONITOR:</span>
+              <button 
+                data-od-id="multimonitor-toggle"
+                onClick={handleSpawnMonitor}
+                style={{
+                  padding: '4px 10px',
+                  backgroundColor: 'transparent',
+                  border: '1px solid var(--accent)',
+                  color: 'var(--accent)',
+                  fontSize: '10px',
+                  cursor: 'pointer',
+                  borderRadius: '3px',
+                  fontFamily: 'var(--font-family)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ display: 'inline-block' }}>
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <path d="M9 17h6" />
+                </svg>
+                LAUNCH SCREEN 2
+              </button>
+            </div>
+          </div>
+
+          {/* Main Layout Area */}
+          <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+
+            {/* Tab Contents */}
+            <main style={{ flex: 1, overflow: 'hidden', padding: '16px', display: 'flex', flexDirection: 'column' }}>
+              
+              {/* Tab 1: Master Launcher */}
+              {activeTab === 'launcher' && (
+                <div data-od-id="view-launcher" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', height: '100%', overflowY: 'auto' }}>
+                  {/* Global Console Controllers */}
+                  <div style={{ border: '1px solid var(--border)', padding: '16px', borderRadius: '4px', backgroundColor: 'var(--surface)' }}>
+                    <h3 style={{ borderBottom: '1px solid var(--border)', paddingBottom: '8px', marginBottom: '16px', color: 'var(--accent)' }}>SYSTEM MACROS & EMERGENCY CONTROLS</h3>
+                    
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                      <div>
+                        <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '6px' }}>EMERGENCY FADE-TO-BLACK</div>
+                        <button 
+                          data-od-id="ftb-button"
+                          onClick={() => updateFtb(!ftbActive)}
+                          style={{
+                            width: '100%',
+                            padding: '16px',
+                            backgroundColor: ftbActive ? 'var(--accent-red)' : 'transparent',
+                            color: ftbActive ? 'white' : 'var(--accent-red)',
+                            border: '2px solid var(--accent-red)',
+                            fontWeight: 'bold',
+                            fontSize: '14px',
+                            cursor: 'pointer',
+                            borderRadius: '4px',
+                            fontFamily: 'var(--font-family)',
+                            transition: 'all 0.2s'
+                          }}>
+                          {ftbActive ? 'ABORT PANIC / RESTORE VIDEO' : 'ENGAGE FTB (FADE TO BLACK)'}
+                        </button>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                        <button style={{ padding: '10px', border: '1px solid var(--border)', backgroundColor: 'transparent', color: 'var(--fg)', borderRadius: '3px', cursor: 'pointer', fontFamily: 'var(--font-family)' }}>RESET AUDIO EQ</button>
+                        <button style={{ padding: '10px', border: '1px solid var(--border)', backgroundColor: 'transparent', color: 'var(--fg)', borderRadius: '3px', cursor: 'pointer', fontFamily: 'var(--font-family)' }}>SYNC CLOCK SOURCE</button>
+                        <button style={{ padding: '10px', border: '1px solid var(--border)', backgroundColor: 'transparent', color: 'var(--fg)', borderRadius: '3px', cursor: 'pointer', fontFamily: 'var(--font-family)' }}>REBOOT QML COMPOSITOR</button>
+                        <button style={{ padding: '10px', border: '1px solid var(--border)', backgroundColor: 'transparent', color: 'var(--fg)', borderRadius: '3px', cursor: 'pointer', fontFamily: 'var(--font-family)' }}>LOAD DEFAULT SDS SHOW</button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Environment Routing Matrix */}
+                  <div style={{ border: '1px solid var(--border)', padding: '16px', borderRadius: '4px', backgroundColor: 'var(--surface)', display: 'flex', flexDirection: 'column' }}>
+                    <h3 style={{ borderBottom: '1px solid var(--border)', paddingBottom: '8px', marginBottom: '16px', color: 'var(--accent)' }}>ACTIVE INTER-WINDOW BUS ROUTING</h3>
+                    
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '8px' }}>
+                        <span style={{ color: 'var(--muted)' }}>SHOW TARGET:</span>
+                        <span style={{ color: 'var(--accent)' }}>[assets/shows/default.sds]</span>
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '8px' }}>
+                        <span style={{ color: 'var(--muted)' }}>SCREEN 2 STATUS:</span>
+                        <span>{isMonitorSecondary ? 'CONNECTED (ACTING TARGET)' : 'DISCONNECTED (READY)'}</span>
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '8px' }}>
+                        <span style={{ color: 'var(--muted)' }}>SQL SNAPSHOTS:</span>
+                        <span>24 snapshots verified</span>
+                      </div>
+                      
+                      <div style={{ marginTop: 'auto', borderTop: '1px solid var(--border)', paddingTop: '10px', fontSize: '11px', color: 'var(--muted)' }}>
+                        System locks variables in localState context to synchronize faders and busses between main monitor workspace and separate tab window containers.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Tab 2: Video Switcher */}
+              {activeTab === 'switcher' && (
+                <div data-od-id="view-switcher" style={{ display: 'grid', gridTemplateRows: '1.2fr 1fr', gap: '16px', height: '100%' }}>
+                  
+                  {/* Genlock Multiview Simulation Grid */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' }}>
+                    
+                    {/* View 1: Cam 1 */}
+                    <div style={{
+                      border: pgmActive === 1 ? '2px solid var(--accent-red)' : pvwActive === 1 ? '2px solid var(--accent)' : '1px solid var(--border)',
+                      position: 'relative',
+                      backgroundColor: 'black'
+                    }} className="grid-lines">
+                      <div style={{ position: 'absolute', bottom: '4px', left: '4px', backgroundColor: 'rgba(0,0,0,0.8)', padding: '2px 6px', fontSize: '10px' }}>
+                        CAM 1 (LIVE)
+                      </div>
+                    </div>
+
+                    {/* View 2: Cam 2 */}
+                    <div style={{
+                      border: pgmActive === 2 ? '2px solid var(--accent-red)' : pvwActive === 2 ? '2px solid var(--accent)' : '1px solid var(--border)',
+                      position: 'relative',
+                      backgroundColor: 'black'
+                    }} className="grid-lines">
+                      <div style={{ position: 'absolute', bottom: '4px', left: '4px', backgroundColor: 'rgba(0,0,0,0.8)', padding: '2px 6px', fontSize: '10px' }}>
+                        CAM 2 (PVW)
+                      </div>
+                    </div>
+
+                    {/* View 3: Cam 3 */}
+                    <div style={{
+                      border: pgmActive === 3 ? '2px solid var(--accent-red)' : pvwActive === 3 ? '2px solid var(--accent)' : '1px solid var(--border)',
+                      position: 'relative',
+                      backgroundColor: 'black'
+                    }} className="grid-lines">
+                      <div style={{ position: 'absolute', bottom: '4px', left: '4px', backgroundColor: 'rgba(0,0,0,0.8)', padding: '2px 6px', fontSize: '10px' }}>
+                        CAM 3
+                      </div>
+                    </div>
+
+                    {/* View 4: Media Deck */}
+                    <div style={{
+                      border: pgmActive === 4 ? '2px solid var(--accent-red)' : pvwActive === 4 ? '2px solid var(--accent)' : '1px solid var(--border)',
+                      position: 'relative',
+                      backgroundColor: 'black'
+                    }} className="grid-lines">
+                      <div style={{ position: 'absolute', bottom: '4px', left: '4px', backgroundColor: 'rgba(0,0,0,0.8)', padding: '2px 6px', fontSize: '10px' }}>
+                        PLAYBACK DECK 1
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Switcher Controls Bus */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 240px', gap: '16px', border: '1px solid var(--border)', padding: '16px', borderRadius: '4px', backgroundColor: 'var(--surface)' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                      
+                      {/* Program Bus */}
+                      <div>
+                        <div style={{ fontSize: '11px', color: 'var(--accent-red)', fontWeight: 'bold', marginBottom: '6px' }}>PROGRAM BUS</div>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          {[1, 2, 3, 4].map(idx => (
+                            <button 
+                              key={idx}
+                              onClick={() => updatePgm(idx)}
+                              style={{
+                                flex: 1,
+                                padding: '10px',
+                                border: '1px solid var(--border)',
+                                backgroundColor: pgmActive === idx ? 'var(--accent-red)' : 'transparent',
+                                color: pgmActive === idx ? 'white' : 'var(--fg)',
+                                cursor: 'pointer',
+                                fontFamily: 'var(--font-family)'
+                              }}>
+                              CH {idx}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Preview Bus */}
+                      <div>
+                        <div style={{ fontSize: '11px', color: 'var(--accent)', fontWeight: 'bold', marginBottom: '6px' }}>PREVIEW BUS</div>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          {[1, 2, 3, 4].map(idx => (
+                            <button 
+                              key={idx}
+                              onClick={() => updatePvw(idx)}
+                              style={{
+                                flex: 1,
+                                padding: '10px',
+                                border: '1px solid var(--border)',
+                                backgroundColor: pvwActive === idx ? 'var(--accent)' : 'transparent',
+                                color: pvwActive === idx ? 'var(--bg)' : 'var(--fg)',
+                                cursor: 'pointer',
+                                fontFamily: 'var(--font-family)'
+                              }}>
+                              CH {idx}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Transition Panel */}
+                    <div style={{ borderLeft: '1px solid var(--border)', paddingLeft: '16px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button 
+                          onClick={handleExecuteCut}
+                          style={{ flex: 1, padding: '12px 6px', border: '1px solid var(--border)', backgroundColor: 'transparent', cursor: 'pointer', color: 'white', fontFamily: 'var(--font-family)' }}>
+                          CUT
+                        </button>
+                        <button 
+                          onClick={handleExecuteAuto}
+                          style={{ flex: 1, padding: '12px 6px', border: '1px solid var(--border)', backgroundColor: 'transparent', cursor: 'pointer', color: 'white', fontFamily: 'var(--font-family)' }}>
+                          AUTO
+                        </button>
+                      </div>
+
+                      <div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--muted)', marginBottom: '4px' }}>
+                          <span>TRANSITION TIME</span>
+                          <span>{transitionRate} FRM</span>
+                        </div>
+                        <input 
+                          type="range" 
+                          min="5" 
+                          max="120" 
+                          value={transitionRate} 
+                          onChange={(e) => setTransitionRate(Number(e.target.value))} 
+                          style={{ width: '100%', accentColor: 'var(--accent)' }} 
+                        />
+                      </div>
+
+                      {/* Mock T-Bar Controller */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <span style={{ fontSize: '9px', color: 'var(--muted)' }}>T-BAR</span>
+                        <div style={{ flex: 1, height: '8px', backgroundColor: 'black', borderRadius: '4px', position: 'relative' }}>
+                          <div style={{
+                            width: '20px',
+                            height: '20px',
+                            backgroundColor: 'var(--accent)',
+                            borderRadius: '3px',
+                            position: 'absolute',
+                            top: '-6px',
+                            left: `calc(${tbarProgress}% - 10px)`,
+                            cursor: 'pointer'
+                          }}></div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Tab 3: Audio Console */}
+              {activeTab === 'audio' && (
+                <div data-od-id="view-audio" style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: '16px', height: '100%', overflow: 'hidden' }}>
+                  
+                  {/* Channel Strip Array */}
+                  <div style={{ border: '1px solid var(--border)', padding: '16px', borderRadius: '4px', backgroundColor: 'var(--surface)', display: 'flex', gap: '10px', overflowX: 'auto', height: '100%' }}>
+                    {/* Inputs 1-8 */}
+                    {Array.from({ length: 8 }).map((_, i) => (
+                      <div key={i} style={{
+                        width: '75px',
+                        borderRight: '1px solid var(--border)',
+                        paddingRight: '10px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        height: '100%'
+                      }}>
+                        <span style={{ fontSize: '10px', fontWeight: 'bold' }}>IN {i+1}</span>
+                        <span style={{ fontSize: '9px', color: 'var(--muted)' }}>
+                          {i === 0 ? 'CAM 1' : i === 1 ? 'CAM 2' : i === 2 ? 'TALKBACK' : 'INPUT'}
+                        </span>
+
+                        {/* Interactive EQ selector */}
+                        <button 
+                          onClick={() => setSelectedAudioChan(i)}
+                          style={{
+                            padding: '3px 8px',
+                            fontSize: '9px',
+                            backgroundColor: selectedAudioChan === i ? 'var(--accent)' : 'transparent',
+                            border: '1px solid var(--border)',
+                            color: selectedAudioChan === i ? 'var(--bg)' : 'var(--fg)',
+                            cursor: 'pointer',
+                            borderRadius: '2px',
+                            fontFamily: 'var(--font-family)'
+                          }}>
+                          SEL
+                        </button>
+
+                        <div style={{ display: 'flex', gap: '4px', margin: '4px 0' }}>
+                          <button style={{ padding: '2px 4px', fontSize: '9px', backgroundColor: 'transparent', border: '1px solid var(--border)', color: 'var(--fg)', borderRadius: '2px' }}>M</button>
+                          <button style={{ padding: '2px 4px', fontSize: '9px', backgroundColor: 'transparent', border: '1px solid var(--border)', color: 'var(--fg)', borderRadius: '2px' }}>S</button>
+                        </div>
+
+                        {/* Virtual fader slot */}
+                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative', margin: '15px 0' }}>
+                          {/* VU levels strip */}
+                          <div style={{ width: '4px', height: '100%', backgroundColor: 'black', position: 'absolute', left: '10px' }}>
+                            <div style={{ height: `${audioFaders[i] * 0.8}%`, width: '100%', backgroundColor: 'var(--accent)' }}></div>
+                          </div>
+                          <input 
+                            type="range" 
+                            min="0" 
+                            max="100" 
+                            value={audioFaders[i]} 
+                            onChange={(e) => updateFader(i, Number(e.target.value))} 
+                            orient="vertical" 
+                            style={{ 
+                              writingMode: 'bt-lr', 
+                              WebkitAppearance: 'slider-vertical', 
+                              width: '12px', 
+                              height: '100%',
+                              accentColor: 'var(--accent)'
+                            }} 
+                          />
+                        </div>
+                        <span style={{ fontSize: '9px', color: 'var(--muted)' }}>{audioFaders[i]}%</span>
+                      </div>
+                    ))}
+
+                    {/* Master Bus Channel Strip */}
+                    <div style={{
+                      width: '75px',
+                      paddingLeft: '10px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      height: '100%',
+                      backgroundColor: 'rgba(255,255,255,0.02)'
+                    }}>
+                      <span style={{ fontSize: '10px', fontWeight: 'bold', color: 'var(--accent-red)' }}>MASTER</span>
+                      <span style={{ fontSize: '9px', color: 'var(--muted)' }}>OUT</span>
+
+                      <button style={{ padding: '3px 8px', fontSize: '9px', backgroundColor: 'transparent', border: '1px solid var(--border)', color: 'var(--fg)', cursor: 'default', borderRadius: '2px' }}>SEL</button>
+
+                      <div style={{ display: 'flex', gap: '4px', margin: '4px 0' }}>
+                        <button style={{ padding: '2px 4px', fontSize: '9px', backgroundColor: 'transparent', border: '1px solid var(--border)', color: 'var(--fg)', borderRadius: '2px' }}>M</button>
+                        <button style={{ padding: '2px 4px', fontSize: '9px', backgroundColor: 'transparent', border: '1px solid var(--border)', color: 'var(--fg)', borderRadius: '2px' }}>S</button>
+                      </div>
+
+                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative', margin: '15px 0' }}>
+                        <div style={{ width: '4px', height: '100%', backgroundColor: 'black', position: 'absolute', left: '10px' }}>
+                          <div style={{ height: `${audioFaders[8] * 0.8}%`, width: '100%', backgroundColor: 'var(--accent-red)' }}></div>
+                        </div>
+                        <input 
+                          type="range" 
+                          min="0" 
+                          max="100" 
+                          value={audioFaders[8]} 
+                          onChange={(e) => updateFader(8, Number(e.target.value))} 
+                          orient="vertical" 
+                          style={{ 
+                            writingMode: 'bt-lr', 
+                            WebkitAppearance: 'slider-vertical', 
+                            width: '12px', 
+                            height: '100%',
+                            accentColor: 'var(--accent-red)'
+                          }} 
+                        />
+                      </div>
+                      <span style={{ fontSize: '9px', color: 'var(--muted)' }}>{audioFaders[8]}%</span>
+                    </div>
+                  </div>
+
+                  {/* Parametric EQ / DSP Configuration */}
+                  <div style={{ border: '1px solid var(--border)', padding: '16px', borderRadius: '4px', backgroundColor: 'var(--surface)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                    <div>
+                      <h3 style={{ borderBottom: '1px solid var(--border)', paddingBottom: '8px', marginBottom: '16px', color: 'var(--accent)' }}>EQ/DSP PANEL: IN {selectedAudioChan + 1}</h3>
+                      
+                      {/* Matrix Grid Visualization */}
+                      <div style={{ height: '140px', border: '1px solid var(--border)', borderRadius: '4px', position: 'relative', backgroundColor: 'black', overflow: 'hidden' }} className="grid-lines">
+                        {/* Interactive frequency response curve visualization */}
+                        <svg style={{ width: '100%', height: '100%' }}>
+                          <path d="M 0 70 Q 60 70 120 70 T 240 70" fill="none" stroke="var(--muted)" strokeWidth="1" />
+                          <path d={`M 0 70 Q 70 ${70 - eqSettings[0].gain * 4} 140 ${70 - eqSettings[1].gain * 4} T 280 70`} fill="none" stroke="var(--accent)" strokeWidth="2" />
+                        </svg>
+                        <div style={{ position: 'absolute', top: '4px', right: '4px', fontSize: '9px', color: 'var(--muted)' }}>4-BAND DSP MOCK</div>
+                      </div>
+                    </div>
+
+                    {/* Band controllers */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '16px' }}>
+                      {eqSettings.map((band, idx) => (
+                        <div key={idx} style={{ display: 'grid', gridTemplateColumns: '30px 1fr', gap: '8px', alignItems: 'center' }}>
+                          <span style={{ fontSize: '10px', color: 'var(--muted)' }}>B{idx+1}</span>
+                          <input 
+                            type="range" 
+                            min="-12" 
+                            max="12" 
+                            value={band.gain} 
+                            onChange={(e) => {
+                              const newEq = [...eqSettings];
+                              newEq[idx].gain = Number(e.target.value);
+                              setEqSettings(newEq);
+                            }}
+                            style={{ accentColor: 'var(--accent)' }}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Tab 4: Show Builder */}
+              {activeTab === 'database' && (
+                <div data-od-id="view-database" style={{ display: 'grid', gridTemplateRows: '1fr 120px', gap: '16px', height: '100%', overflow: 'hidden' }}>
+                  
+                  {/* Database configuration and tables */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: '16px', overflow: 'hidden' }}>
+                    
+                    {/* Database Telemetry Logs */}
+                    <div style={{ border: '1px solid var(--border)', padding: '16px', borderRadius: '4px', backgroundColor: 'var(--surface)', display: 'flex', flexDirection: 'column' }}>
+                      <h3 style={{ borderBottom: '1px solid var(--border)', paddingBottom: '8px', marginBottom: '16px', color: 'var(--accent)' }}>REAL-TIME ENGINE DB LOGS (WAL MODE)</h3>
+                      
+                      <div 
+                        ref={logContainerRef}
+                        style={{
+                          flex: 1,
+                          overflowY: 'auto',
+                          fontFamily: 'var(--font-family)',
+                          fontSize: '11px',
+                          color: 'var(--muted)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '4px'
+                        }}>
+                        {dbLogs.map((log, index) => (
+                          <div key={index} style={{ borderBottom: '1px dashed var(--border)', paddingBottom: '4px' }}>
+                            <span style={{ color: 'var(--accent)' }}>&gt;</span> {log}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Shows package lists */}
+                    <div style={{ border: '1px solid var(--border)', padding: '16px', borderRadius: '4px', backgroundColor: 'var(--surface)', display: 'flex', flexDirection: 'column' }}>
+                      <h3 style={{ borderBottom: '1px solid var(--border)', paddingBottom: '8px', marginBottom: '16px', color: 'var(--accent)' }}>SHOW PACKAGES (.SDS)</h3>
+                      
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div style={{ border: '1px solid var(--border)', padding: '8px', borderRadius: '3px', backgroundColor: 'rgba(255,255,255,0.02)' }}>
+                          <div style={{ fontWeight: 'bold' }}>default.sds</div>
+                          <div style={{ fontSize: '10px', color: 'var(--muted)' }}>Loaded: 2026-07-03 18:40</div>
+                        </div>
+                        <div style={{ border: '1px solid var(--border)', padding: '8px', borderRadius: '3px', color: 'var(--muted)' }}>
+                          <div>backup_show_v1.sds</div>
+                          <div style={{ fontSize: '10px' }}>Created: 2026-07-01 12:22</div>
+                        </div>
+                      </div>
+
+                      <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        <button style={{ width: '100%', padding: '8px', border: '1px solid var(--border)', backgroundColor: 'transparent', color: 'var(--fg)', cursor: 'pointer', fontFamily: 'var(--font-family)' }}>CREATE SNAPSHOT</button>
+                        <button style={{ width: '100%', padding: '8px', border: '1px solid var(--border)', backgroundColor: 'transparent', color: 'var(--fg)', cursor: 'pointer', fontFamily: 'var(--font-family)' }}>IMPORT SDS ARCHIVE</button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Telemetry performance trackers */}
+                  <div style={{ border: '1px solid var(--border)', padding: '16px', borderRadius: '4px', backgroundColor: 'var(--surface)', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' }}>
+                    <div style={{ borderRight: '1px solid var(--border)', paddingRight: '10px' }}>
+                      <span style={{ fontSize: '10px', color: 'var(--muted)' }}>AUDIO LATENCY</span>
+                      <h2 style={{ fontSize: '20px', color: 'var(--accent)' }}>10.6ms</h2>
+                      <span style={{ fontSize: '9px', color: 'var(--muted)' }}>512 samples @ 48kHz</span>
+                    </div>
+                    <div style={{ borderRight: '1px solid var(--border)', paddingRight: '10px' }}>
+                      <span style={{ fontSize: '10px', color: 'var(--muted)' }}>DRIFT ERROR</span>
+                      <h2 style={{ fontSize: '20px', color: 'var(--accent)' }}>0.02ms</h2>
+                      <span style={{ fontSize: '9px', color: 'var(--muted)' }}>Within genlock bounds</span>
+                    </div>
+                    <div style={{ borderRight: '1px solid var(--border)', paddingRight: '10px' }}>
+                      <span style={{ fontSize: '10px', color: 'var(--muted)' }}>FRAME DROPS</span>
+                      <h2 style={{ fontSize: '20px', color: 'white' }}>0</h2>
+                      <span style={{ fontSize: '9px', color: 'var(--muted)' }}>Total drop count</span>
+                    </div>
+                    <div>
+                      <span style={{ fontSize: '10px', color: 'var(--muted)' }}>DATABASE QUEUE</span>
+                      <h2 style={{ fontSize: '20px', color: 'white' }}>0 tasks</h2>
+                      <span style={{ fontSize: '9px', color: 'var(--muted)' }}>WAL transactional state</span>
+                    </div>
+                  </div>
+
+                </div>
+              )}
+
+            </main>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
