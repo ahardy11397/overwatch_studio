@@ -44,6 +44,9 @@ public:
     }
 
     void setSyncManager(VideoSyncManager* sync) noexcept { syncManager = sync; }
+    HRESULT initialize(ID3D11Device* device, ID3D11DeviceContext* context) noexcept {
+        return compositor.initialize(device, context);
+    }
     GPUCompositor& getCompositor() noexcept { return compositor; }
 
     float getTransitionProgress() const noexcept { return transitionProgress.load(std::memory_order_relaxed); }

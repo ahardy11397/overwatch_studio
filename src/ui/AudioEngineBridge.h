@@ -468,9 +468,9 @@ private:
     
     QTimer* m_feedbackTimer;
 
-    // Simulated real-time background audio thread
+    // Real-time audio processing thread (runs DSP pipeline)
     std::atomic<bool> m_running{true};
-    std::jthread m_simulatedAudioThread;
+    std::jthread m_audioProcessingThread;
     std::jthread m_processListThread;
 
     std::unique_ptr<AudioEngineCore> m_engine;

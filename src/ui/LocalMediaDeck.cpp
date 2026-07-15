@@ -265,9 +265,8 @@ void LocalMediaDeck::load(const QString& path) {
         }
     }
 
-    // Fallback: mock duration
-    int dur = 60 + (path.length() * 3) % 180;
-    m_duration.store(dur);
+    // Decode failed — duration stays 0, UI shows "Load Failed"
+    m_duration.store(0);
     emit durationChanged();
 }
 
@@ -366,15 +365,10 @@ void LocalMediaDeck::generateVideoFrame(QImage& image, int frameCount, int width
             painter.drawPath(path);
         }
     } else {
-        // Fallback visualizer
-        QPainterPath path;
-        path.moveTo(0, centerY);
-        for (int x = 0; x < width; ++x) {
-            double wavePhase = static_cast<double>(x) * 0.05 + (m_playing.load() ? static_cast<double>(frameCount) * 0.2 : 0.0);
-            double amp = std::sin(wavePhase) * std::cos(wavePhase * 0.3);
-            path.lineTo(x, centerY + amp * 60.0 * (m_playing.load() ? 1.0 : 0.1));
-        }
-        painter.drawPath(path);
+        // No media loaded — show "No Media" indicator
+        painter.setPen(QColor("#666666"));
+        QFont nf = painter.font(); nf.setBold(true); nf.setPixelSize(24); painter.setFont(nf);
+        painter.drawText(image.rect(), Qt::AlignCenter, "NO MEDIA");
     }
 
     // Text overlays

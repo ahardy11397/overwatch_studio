@@ -291,7 +291,7 @@ AudioEngineBridge::AudioEngineBridge(QObject* parent)
     refreshProcessesAsync();
 
     m_running = true;
-    m_simulatedAudioThread = std::jthread([this](std::stop_token stopToken) {
+    m_audioProcessingThread = std::jthread([this](std::stop_token stopToken) {
         // Set Windows timer resolution to 1ms for high-precision sleep
         timeBeginPeriod(1);
 
@@ -319,7 +319,7 @@ AudioEngineBridge::AudioEngineBridge(QObject* parent)
                     continue;
                 }
             } else {
-                // Silent/Mock Pacing: Sleep/Yield precisely for 5.333ms frame intervals
+                // No capture hardware — use timer pacing to keep DSP running (useful for testing)
                 nextFrameTime += frameDuration;
                 auto now = std::chrono::steady_clock::now();
                 if (now < nextFrameTime) {
@@ -388,9 +388,9 @@ AudioEngineBridge::AudioEngineBridge(QObject* parent)
 
 AudioEngineBridge::~AudioEngineBridge() {
     m_running = false;
-    m_simulatedAudioThread.request_stop();
-    if (m_simulatedAudioThread.joinable()) {
-        m_simulatedAudioThread.join();
+    m_audioProcessingThread.request_stop();
+    if (m_audioProcessingThread.joinable()) {
+        m_audioProcessingThread.join();
     }
     if (m_processListThread.joinable()) {
         m_processListThread.request_stop();

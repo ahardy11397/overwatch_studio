@@ -11,76 +11,74 @@
 #include <QCoreApplication>
 #include <QDebug>
 #include <QLinearGradient>
-#include <wrl/client.h>
 
 using Microsoft::WRL::ComPtr;
 
 VideoCanvasMock::VideoCanvasMock(QQuickItem* parent)
     : QQuickPaintedItem(parent)
 {
+    // Use global shared device if available
+    if (s_sharedDevice) {
+        m_d3dDevice = s_sharedDevice;
+        m_d3dCtx = s_sharedCtx;
+    }
+
     m_timer = new QTimer(this);
     connect(m_timer, &QTimer::timeout, this, &VideoCanvasMock::updateFrame);
     m_timer->start(16); // 60fps
 
-    // Load fallback camera images
-    for (int i = 0; i < 4; ++i) {
-        QString filename = QString("cam%1.png").arg(i + 1);
-        QStringList searchPaths = {
-            QCoreApplication::applicationDirPath() + "/assets/",
-            QCoreApplication::applicationDirPath() + "/../src/ui/assets/",
-            QCoreApplication::applicationDirPath() + "/../../src/ui/assets/",
-            "./src/ui/assets/",
-            "../src/ui/assets/"
-        };
-        for (const QString& path : searchPaths) {
-            if (m_cameraImages[i].load(path + filename)) {
-                qDebug() << "Loaded camera image" << filename << "from" << path;
-                break;
-            }
-        }
-    }
-
-    // Set up D3D11 when we get a window
     connect(this, &QQuickItem::windowChanged, this, &VideoCanvasMock::onWindowChanged);
 }
 
 VideoCanvasMock::~VideoCanvasMock() {
-    if (m_d3dCtx) m_d3dCtx->Release();
-    if (m_d3dDevice) m_d3dDevice->Release();
+    // Don't release shared device — we don't own it
+    // Only release if we created our own (fallback)
+    if (m_ownsDevice) {
+        if (m_d3dCtx) m_d3dCtx->Release();
+        if (m_d3dDevice) m_d3dDevice->Release();
+    }
+}
+
+void VideoCanvasMock::setGlobalSharedDevice(ID3D11Device* device, ID3D11DeviceContext* ctx) {
+    s_sharedDevice = device;
+    s_sharedCtx = ctx;
+}
+
+void VideoCanvasMock::setSharedDevice(ID3D11Device* device, ID3D11DeviceContext* ctx) {
+    if (m_ownsDevice) {
+        if (m_d3dCtx) m_d3dCtx->Release();
+        if (m_d3dDevice) m_d3dDevice->Release();
+        m_ownsDevice = false;
+    }
+    m_d3dDevice = device;
+    m_d3dCtx = ctx;
 }
 
 void VideoCanvasMock::onWindowChanged(QQuickWindow* win) {
-    if (win) {
-        ensureD3D11();
+    if (win && !m_d3dDevice) {
+        // Fallback: create our own device if no shared device was set
+        D3D_FEATURE_LEVEL featureLevel;
+        HRESULT hr = D3D11CreateDevice(
+            nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr,
+            D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+            nullptr, 0, D3D11_SDK_VERSION,
+            &m_d3dDevice, &featureLevel, &m_d3dCtx);
+        if (FAILED(hr)) {
+            qDebug() << "VideoCanvas: failed to create D3D11 device";
+        } else {
+            m_ownsDevice = true;
+        }
     }
 }
 
-void VideoCanvasMock::ensureD3D11() {
-    if (m_d3dDevice) return;
-
-    // Create a D3D11 device for readback
-    // If the app already has a device, share it; otherwise create one
-    D3D_FEATURE_LEVEL featureLevel;
-    HRESULT hr = D3D11CreateDevice(
-        nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr,
-        D3D11_CREATE_DEVICE_BGRA_SUPPORT,
-        nullptr, 0, D3D11_SDK_VERSION,
-        &m_d3dDevice, &featureLevel, &m_d3dCtx);
-    if (FAILED(hr)) {
-        qDebug() << "VideoCanvasMock: failed to create D3D11 device for readback";
+void VideoCanvasMock::ensureStagingTexture(UINT width, UINT height) {
+    if (m_stagingTex && m_stagingWidth == width && m_stagingHeight == height) {
+        return; // already correct size
     }
-}
 
-void VideoCanvasMock::readTexture(QImage& outImage) {
-    ID3D11Texture2D* srcTex = g_videoOutputTexture.load(std::memory_order_acquire);
-    if (!m_d3dDevice || !m_d3dCtx || !srcTex) return;
-    D3D11_TEXTURE2D_DESC desc;
-    srcTex->GetDesc(&desc);
-
-    // Create a staging texture for CPU readback
     D3D11_TEXTURE2D_DESC stagingDesc = {};
-    stagingDesc.Width = desc.Width;
-    stagingDesc.Height = desc.Height;
+    stagingDesc.Width = width;
+    stagingDesc.Height = height;
     stagingDesc.MipLevels = 1;
     stagingDesc.ArraySize = 1;
     stagingDesc.Format = OutputFormat;
@@ -88,17 +86,30 @@ void VideoCanvasMock::readTexture(QImage& outImage) {
     stagingDesc.Usage = D3D11_USAGE_STAGING;
     stagingDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
 
-    ComPtr<ID3D11Texture2D> stagingTex;
-    HRESULT hr = m_d3dDevice->CreateTexture2D(&stagingDesc, nullptr, &stagingTex);
-    if (FAILED(hr)) return;
+    m_stagingTex.Reset();
+    HRESULT hr = m_d3dDevice->CreateTexture2D(&stagingDesc, nullptr, &m_stagingTex);
+    if (SUCCEEDED(hr)) {
+        m_stagingWidth = width;
+        m_stagingHeight = height;
+    }
+}
 
-    m_d3dCtx->CopyResource(stagingTex.Get(), srcTex);
+void VideoCanvasMock::readTexture(QImage& outImage) {
+    ID3D11Texture2D* srcTex = g_videoOutputTexture.load(std::memory_order_acquire);
+    if (!m_d3dDevice || !m_d3dCtx || !srcTex) return;
+
+    D3D11_TEXTURE2D_DESC desc;
+    srcTex->GetDesc(&desc);
+
+    ensureStagingTexture(desc.Width, desc.Height);
+    if (!m_stagingTex) return;
+
+    m_d3dCtx->CopyResource(m_stagingTex.Get(), srcTex);
 
     D3D11_MAPPED_SUBRESOURCE mapped;
-    hr = m_d3dCtx->Map(stagingTex.Get(), 0, D3D11_MAP_READ, 0, &mapped);
+    HRESULT hr = m_d3dCtx->Map(m_stagingTex.Get(), 0, D3D11_MAP_READ, 0, &mapped);
     if (FAILED(hr)) return;
 
-    // Create QImage from the mapped data
     QImage img(static_cast<int>(desc.Width), static_cast<int>(desc.Height),
                QImage::Format_ARGB32_Premultiplied);
     const auto* src = static_cast<const uint8_t*>(mapped.pData);
@@ -108,7 +119,7 @@ void VideoCanvasMock::readTexture(QImage& outImage) {
                desc.Width * 4);
     }
 
-    m_d3dCtx->Unmap(stagingTex.Get(), 0);
+    m_d3dCtx->Unmap(m_stagingTex.Get(), 0);
     outImage = img;
 }
 
@@ -135,19 +146,12 @@ void VideoCanvasMock::paint(QPainter* painter) {
     for (int i = 0; i < 4; ++i) {
         QRectF qr = rects[i];
 
-        // Try to paint a real frame from the pipeline
+        // Draw real frame from pipeline
         if (!m_channelFrames[i].isNull()) {
             painter->drawImage(qr, m_channelFrames[i]);
-            painter->fillRect(qr, QBrush(QColor(0, 0, 0, 80))); // dim overlay
-        } else if (!m_cameraImages[i].isNull()) {
-            painter->drawImage(qr, m_cameraImages[i]);
-            painter->fillRect(qr, QBrush(QColor(0, 0, 0, 100)));
         } else {
-            QLinearGradient grad(qr.topLeft(), qr.bottomRight());
-            grad.setColorAt(0.0, QColor("#141923"));
-            grad.setColorAt(1.0, QColor("#090b0f"));
-            painter->fillRect(qr, grad);
-            painter->fillRect(qr, QBrush(QColor(0, 0, 0, 50)));
+            // No signal — black with label
+            painter->fillRect(qr, QBrush(QColor("#0a0c10")));
         }
 
         // Camera label
@@ -214,9 +218,8 @@ void VideoCanvasMock::updateFrame() {
     m_frameCount++;
 
     // Read back the latest composited frame from the video pipeline
-    ensureD3D11();
     ID3D11Texture2D* outputTex = g_videoOutputTexture.load(std::memory_order_acquire);
-    if (outputTex) {
+    if (outputTex && m_d3dDevice) {
         QImage frame;
         readTexture(frame);
         if (!frame.isNull()) {

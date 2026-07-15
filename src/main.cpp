@@ -152,12 +152,19 @@ int main(int argc, char *argv[]) {
             &d3dDevice, &featureLevel, &d3dCtx);
         if (FAILED(hr) || !d3dDevice) break;
 
+        // Share D3D11 device with VideoCanvas instances
+        VideoCanvasMock::setGlobalSharedDevice(d3dDevice, d3dCtx);
+
         captureMgr = std::make_unique<VideoCaptureManager>();
         captureMgr->initialize(d3dDevice);
         captureMgr->addWindowSource(0, hwnd);
         captureMgr->startAll();
 
         videoEngine = std::make_unique<VideoEngineCore>();
+        HRESULT initHr = videoEngine->initialize(d3dDevice, d3dCtx);
+        if (FAILED(initHr)) {
+            RealtimeLogger::getInstance().log("WARNING: GPUCompositor initialize failed — video pipeline will output black.");
+        }
         videoEngine->setSyncManager(&captureMgr->getSyncManager());
         videoEngine->start();
         RealtimeLogger::getInstance().log("Video pipeline started: WGC capture + render loop.");
