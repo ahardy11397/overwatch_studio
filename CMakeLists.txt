@@ -27,7 +27,7 @@ find_package(libzip REQUIRED)
 find_package(GTest REQUIRED)
 find_package(readerwriterqueue CONFIG REQUIRED)
 find_package(SQLite3 REQUIRED)
-find_package(Qt6 COMPONENTS Core Gui Qml Quick QuickControls2 REQUIRED)
+find_package(Qt6 COMPONENTS Core Gui Qml Quick QuickControls2 Widgets REQUIRED)
 # FFmpeg - vcpkg doesn't provide CMake config, use find_library instead
 find_path(FFMPEG_AVFORMAT_INCLUDE_DIR NAMES libavformat/avformat.h
     HINTS "${CMAKE_SOURCE_DIR}/vcpkg_installed/x64-windows/include"
@@ -238,7 +238,7 @@ qt_add_qml_module(overwatch_studio
 
 target_link_libraries(overwatch_studio PRIVATE
     overwatch_engine
-    Qt6::Core Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2
+    Qt6::Core Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2 Qt6::Widgets
     readerwriterqueue::readerwriterqueue
     SQLite3::SQLite3
     libzip::zip

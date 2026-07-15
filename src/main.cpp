@@ -1,4 +1,4 @@
-#include <QGuiApplication>
+#include <QApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QMessageLogContext>
@@ -84,7 +84,7 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    QGuiApplication app(argc, argv);
+    QApplication app(argc, argv);
 
     RealtimeLogger::getInstance().log("OVERWATCH STUDIO SYSTEM ENGINE STARTUP SEQUENCE INITIATED...");
 
@@ -115,6 +115,7 @@ int main(int argc, char *argv[]) {
     };
 
     std::vector<QQmlApplicationEngine*> engines;
+    std::vector<QWindow*> appWindows;
     for (const auto& w : windows) {
         auto* eng = new QQmlApplicationEngine(&app);
         eng->rootContext()->setContextProperty("audioCore", &audioBridge);
@@ -135,17 +136,28 @@ int main(int argc, char *argv[]) {
         RealtimeLogger::getInstance().log(std::string("Loading ") + w.name + ": " + url.toString().toStdString());
 
         QObject::connect(eng, &QQmlApplicationEngine::objectCreated,
-            &app, [w, url](QObject *obj, const QUrl &objUrl) {
+            &app, [w, url, &appWindows](QObject *obj, const QUrl &objUrl) {
                 if (!obj) {
                     RealtimeLogger::getInstance().log(std::string("FATAL: ") + w.name + " failed to load: " + objUrl.toString().toStdString());
                 } else {
                     RealtimeLogger::getInstance().log(std::string("SUCCESS: ") + w.name + " loaded.");
+                    auto* win = qobject_cast<QWindow*>(obj);
+                    if (win) {
+                        win->create();
+                        win->show();
+                        win->raise();
+                        win->requestActivate();
+                        appWindows.push_back(win);
+                    }
                 }
             }, Qt::QueuedConnection);
 
         eng->load(url);
         engines.push_back(eng);
     }
+
+    // Process events to ensure all QML engines finish loading and windows are shown
+    app.processEvents();
 
     RealtimeLogger::getInstance().log("All windows loaded. Starting optional video pipeline.");
 
