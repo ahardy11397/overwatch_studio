@@ -88,6 +88,25 @@ Window {
     
     WindowStateStore { id: winStore }
 
+    Component.onCompleted: {
+        var rect = winStore.restoreWindowGeometry("AudioConsole", Qt.rect(460, 80, 1620, 680));
+        audioWin.x = rect.x;
+        audioWin.y = rect.y;
+        audioWin.width = rect.width;
+        audioWin.height = rect.height;
+    }
+
+    onXChanged: audioSaveTimer.restart()
+    onYChanged: audioSaveTimer.restart()
+    onWidthChanged: audioSaveTimer.restart()
+    onHeightChanged: audioSaveTimer.restart()
+
+    Timer {
+        id: audioSaveTimer
+        interval: 1000
+        onTriggered: winStore.saveWindowGeometry("AudioConsole", Qt.rect(audioWin.x, audioWin.y, audioWin.width, audioWin.height), 0)
+    }
+
     // Shared state (moved from root)
     property variant channelVolumes: [
         1.0, 1.0, 1.0, 1.0,   1.0, 1.0, 1.0, 1.0,

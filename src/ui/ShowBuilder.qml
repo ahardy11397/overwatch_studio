@@ -88,6 +88,25 @@ Window {
     
     WindowStateStore { id: winStore }
 
+    Component.onCompleted: {
+        var rect = winStore.restoreWindowGeometry("ShowBuilder", Qt.rect(1140, 640, 960, 480));
+        sandboxWin.x = rect.x;
+        sandboxWin.y = rect.y;
+        sandboxWin.width = rect.width;
+        sandboxWin.height = rect.height;
+    }
+
+    onXChanged: sandboxSaveTimer.restart()
+    onYChanged: sandboxSaveTimer.restart()
+    onWidthChanged: sandboxSaveTimer.restart()
+    onHeightChanged: sandboxSaveTimer.restart()
+
+    Timer {
+        id: sandboxSaveTimer
+        interval: 1000
+        onTriggered: winStore.saveWindowGeometry("ShowBuilder", Qt.rect(sandboxWin.x, sandboxWin.y, sandboxWin.width, sandboxWin.height), 0)
+    }
+
     // Shared state (moved from root)
     property variant channelVolumes: [
         1.0, 1.0, 1.0, 1.0,   1.0, 1.0, 1.0, 1.0,

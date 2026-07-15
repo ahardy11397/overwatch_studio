@@ -10,12 +10,66 @@ Window {
     
     WindowStateStore { id: winStore }
 
+    Component.onCompleted: {
+        var rect = winStore.restoreWindowGeometry("VideoSwitcher", Qt.rect(100, 640, 1024, 576));
+        videoWin.x = rect.x;
+        videoWin.y = rect.y;
+        videoWin.width = rect.width;
+        videoWin.height = rect.height;
+    }
+
+    onXChanged: videoSaveTimer.restart()
+    onYChanged: videoSaveTimer.restart()
+    onWidthChanged: videoSaveTimer.restart()
+    onHeightChanged: videoSaveTimer.restart()
+
+    Timer {
+        id: videoSaveTimer
+        interval: 1000
+        onTriggered: winStore.saveWindowGeometry("VideoSwitcher", Qt.rect(videoWin.x, videoWin.y, videoWin.width, videoWin.height), 0)
+    }
+
     // Video state (previously from root scope)
     property int programCameraIdx: 0
     property int previewCameraIdx: 1
     property real transitionPercent: 0.0
     property bool crossfadeActive: false
     property bool fadeToBlack: false
+
+    function logStateBeforeChange() {
+        audioCore.captureUndoSnapshot(
+            [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+            [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false],
+            1.0,
+            false,
+            programCameraIdx,
+            previewCameraIdx,
+            audioCore.fadeToBlack
+        );
+    }
+
+    function cutTransition() {
+        var temp = programCameraIdx;
+        programCameraIdx = previewCameraIdx;
+        previewCameraIdx = temp;
+        transitionPercent = 0.0;
+    }
+
+    function autoTransition() {
+        autoTransAnimation.restart();
+    }
+
+    PropertyAnimation {
+        id: autoTransAnimation
+        target: videoWin
+        property: "transitionPercent"
+        from: 0.0
+        to: 1.0
+        duration: 300
+        onFinished: {
+            cutTransition();
+        }
+    }
 
     width: 1024
 

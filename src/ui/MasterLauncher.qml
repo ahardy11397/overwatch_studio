@@ -80,8 +80,8 @@ Window {
                 subtitle: "24-Channel Fader Bay"
                 icon: "🔊"
                 activeColor: "#00d084"
-                isOpen: audioWindow.visible
-                onToggled: audioWindow.visible = !audioWindow.visible
+                isOpen: false
+                onToggled: audioCore.toggleWindow("Audio Touch Console")
             }
 
             ModuleToggle {
@@ -89,8 +89,8 @@ Window {
                 subtitle: "Widescreen 4-Cam Switch"
                 icon: "📹"
                 activeColor: "#00a0f0"
-                isOpen: videoWindow.visible
-                onToggled: videoWindow.visible = !videoWindow.visible
+                isOpen: false
+                onToggled: audioCore.toggleWindow("Video Switcher Console")
             }
 
             ModuleToggle {
@@ -98,8 +98,8 @@ Window {
                 subtitle: "Diagnostics & WAL Files"
                 icon: "🛠️"
                 activeColor: "#f0b000"
-                isOpen: showBuilderWindow.visible
-                onToggled: showBuilderWindow.visible = !showBuilderWindow.visible
+                isOpen: false
+                onToggled: audioCore.toggleWindow("Show Control Sandbox")
             }
         }
 
@@ -125,11 +125,6 @@ Window {
             onClicked: audioCore.fadeToBlack = !audioCore.fadeToBlack
         }
     }
-
-    // Secondary Windows
-    AudioConsole { id: audioWindow }
-    VideoSwitcher { id: videoWindow }
-    ShowBuilder { id: showBuilderWindow }
 
     // Child component for toggles
     component ModuleToggle: Rectangle {
