@@ -56,3 +56,6 @@ src/ui/fix_duplicates.py
 src/ui/update_main.py
 src/ui/update_main2.py
 src/ui/update_main3.py
+
+# Third-party libraries (submodules/local installs)
+libs/
