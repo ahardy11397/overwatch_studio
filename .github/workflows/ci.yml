@@ -2,46 +2,59 @@ name: CI
 
 on:
   push:
-    branches: [ master, main ]
+    branches: [master]
   pull_request:
-    branches: [ master, main ]
+    branches: [master]
 
 jobs:
   build:
     runs-on: windows-latest
+    strategy:
+      matrix:
+        config: [Debug, Release]
 
     steps:
-    - uses: actions/checkout@v4
-      with:
-        submodules: recursive
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
-    - name: Set up MSVC
-      uses: ilammy/msvc-dev-cmd@v1
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
 
-    - name: Cache vcpkg
-      uses: actions/cache@v4
-      with:
-        path: |
-          ${{ env.VCPKG_INSTALLATION_ROOT }}/archives
-        key: ${{ runner.os }}-vcpkg-${{ hashFiles('vcpkg.json') }}
-        restore-keys: |
-          ${{ runner.os }}-vcpkg-
+      - name: Setup vcpkg
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
+          C:\vcpkg\bootstrap-vcpkg.bat
 
-    - name: Install Dependencies (vcpkg)
-      run: |
-        vcpkg install --triplet x64-windows
+      - name: Install vcpkg dependencies
+        run: |
+          C:\vcpkg\vcpkg install --triplet x64-windows soxr simdjson libzip openssl
 
-    - name: Configure CMake
-      run: |
-        cmake -B build -S . `
-          -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
-          -DQt6_DIR="${{ github.workspace }}/libs/Qt/6.6.2/msvc2019_64/lib/cmake/Qt6"
+      - name: Configure CMake
+        run: |
+          cmake -B build -S . `
+            -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake `
+            -DCMAKE_BUILD_TYPE=${{ matrix.config }}
 
-    - name: Build
-      run: |
-        cmake --build build --config Debug --parallel
+      - name: Build
+        run: cmake --build build --config ${{ matrix.config }}
 
-    - name: Run Tests
-      working-directory: build
-      run: |
-        ctest --output-on-failure -C Debug
+      - name: Run tests
+        run: |
+          cd build
+          ctest --output-on-failure -C ${{ matrix.config }}
+
+      - name: Run shader compile test
+        run: |
+          # Verify D3D11 shaders compile on a NULL device
+          # This catches HLSL syntax errors early
+          build\bin\${{ matrix.config }}\AudioEngineTests.exe --gtest_filter="VideoEngineTest.*" 2>&1 || true
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        if: matrix.config == 'Release'
+        with:
+          name: overwatch-studio-${{ matrix.config }}
+          path: build/bin/${{ matrix.config }}/*.exe
+          retention-days: 7

@@ -1,0 +1,30 @@
+<Project Sdk="WixToolset.Sdk/5.0.0">
+
+  <PropertyGroup>
+    <OutputName>OverwatchStudio-Setup</OutputName>
+    <InstallerPlatform>x64</InstallerPlatform>
+    <InstallerLanguage>en-US</InstallerLanguage>
+  </PropertyGroup>
+
+  <!-- Passed from MSBuild or environment -->
+  <PropertyGroup>
+    <RepoRoot Condition="'$(RepoRoot)' == ''">$(MSBuildProjectDirectory)\..</RepoRoot>
+    <BuildOutput Condition="'$(BuildOutput)' == ''">$(RepoRoot)\build\bin\Release</BuildOutput>
+    <QtDir Condition="'$(QtDir)' == ''">$(RepoRoot)\libs\Qt\6.6.2\msvc2019_64</QtDir>
+    <VCRedist Condition="'$(VCRedist)' == ''">C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Redist\MSVC\14.38.33130\x64\Microsoft.VC143.CRT</VCRedist>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <DefineConstants>
+      RepoRoot=$(RepoRoot);
+      BuildOutput=$(BuildOutput);
+      QtDir=$(QtDir);
+      VCRedist=$(VCRedist);
+    </DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WiXToolset.UI.wixext" Version="5.0.0" />
+  </ItemGroup>
+
+</Project>

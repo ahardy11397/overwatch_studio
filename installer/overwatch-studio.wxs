@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+
+  <Package Name="Overwatch Studio"
+           Manufacturer="Antigravity AI"
+           Version="1.0.0.0"
+           UpgradeCode="A1B2C3D4-E5F6-7890-ABCD-EF1234567890"
+           Scope="perMachine">
+
+    <SummaryInformation Description="Overwatch Studio — Software-Defined Production Mixer" />
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version is already installed." />
+
+    <Feature Id="Main">
+      <ComponentRef Id="ExeComponent" />
+      <ComponentRef Id="AssetsComponent" />
+      <ComponentRef Id="QtRuntimeComponent" />
+      <ComponentRef Id="VCRedistComponent" />
+      <ComponentRef Id="StartMenuShortcut" />
+      <ComponentRef Id="DesktopShortcut" />
+    </Feature>
+
+    <!-- Main executable -->
+    <StandardDirectory Id="ProgramFilesFolder">
+      <Directory Id="INSTALLFOLDER" Name="Overwatch Studio">
+        <Component Id="ExeComponent" Guid="11111111-2222-3333-4444-555555555555">
+          <File Id="ExeFile" Source="$(var.BuildOutput)\overwatch_studio.exe" KeyPath="yes" />
+        </Component>
+
+        <!-- Assets (default showfile, etc.) -->
+        <Directory Id="AssetsDir" Name="assets">
+          <Directory Id="ShowsDir" Name="shows">
+            <Component Id="AssetsComponent" Guid="22222222-3333-4444-5555-666666666666">
+              <File Id="DefaultShow" Source="$(var.RepoRoot)\assets\shows\default.sds" KeyPath="yes" />
+            </Component>
+          </Directory>
+        </Directory>
+
+        <!-- Qt Runtime -->
+        <Directory Id="QtDir" Name="Qt">
+          <Component Id="QtRuntimeComponent" Guid="33333333-4444-5555-6666-777777777777">
+            <File Id="Qt6Core" Source="$(var.QtDir)\bin\Qt6Core.dll" KeyPath="yes" />
+            <File Id="Qt6Gui" Source="$(var.QtDir)\bin\Qt6Gui.dll" />
+            <File Id="Qt6Qml" Source="$(var.QtDir)\bin\Qt6Qml.dll" />
+            <File Id="Qt6Quick" Source="$(var.QtDir)\bin\Qt6Quick.dll" />
+            <File Id="Qt6Widgets" Source="$(var.QtDir)\bin\Qt6Widgets.dll" />
+            <File Id="Qt6Network" Source="$(var.QtDir)\bin\Qt6Network.dll" />
+            <File Id="Qt6Svg" Source="$(var.QtDir)\bin\Qt6Svg.dll" />
+
+            <!-- Qt Platform Plugin -->
+            <Directory Id="QtPlatformDir" Name="platforms">
+              <Component Id="QtPlatformComponent" Guid="44444444-5555-6666-7777-888888888888">
+                <File Id="QWindows" Source="$(var.QtDir)\plugins\platforms\qwindows.dll" KeyPath="yes" />
+              </Component>
+            </Directory>
+
+            <!-- Qt QML Modules -->
+            <Directory Id="QtQmlDir" Name="qml">
+              <Component Id="QtQmlComponent" Guid="55555555-6666-7777-8888-999999999999">
+                <File Id="QtQmlPlugin" Source="$(var.QtDir)\qml\QtQuick\qtquickplugin.dll" KeyPath="yes" />
+              </Component>
+            </Directory>
+          </Component>
+        </Directory>
+
+        <!-- VC++ Redistributable -->
+        <Component Id="VCRedistComponent" Guid="66666666-7777-8888-9999-aaaaaaaaaaaa">
+          <File Id="VCRuntime140" Source="$(var.VCRedist)\vcruntime140.dll" KeyPath="yes" />
+          <File Id="VCRuntime140_1" Source="$(var.VCRedist)\vcruntime140_1.dll" />
+          <File Id="MSVCP140" Source="$(var.VCRedist)\msvcp140.dll" />
+          <File Id="ConcRT140" Source="$(var.VCRedist)\concrt140.dll" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <!-- Start Menu Shortcut -->
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Component Id="StartMenuShortcut" Guid="77777777-8888-9999-aaaa-bbbbbbbbbbbb">
+        <Shortcut Id="StartMenuShortcut"
+                  Name="Overwatch Studio"
+                  Description="Software-Defined Production Mixer"
+                  Target="[INSTALLFOLDER]overwatch_studio.exe"
+                  WorkingDirectory="INSTALLFOLDER" />
+        <RemoveFolder Id="RemoveStartMenu" Directory="ProgramMenuFolder" On="uninstall" />
+        <RegistryValue Root="HKCU" Key="Software\Antigravity AI\Overwatch Studio"
+                       Name="installed" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </StandardDirectory>
+
+    <!-- Desktop Shortcut -->
+    <StandardDirectory Id="DesktopFolder">
+      <Component Id="DesktopShortcut" Guid="88888888-9999-aaaa-bbbb-cccccccccccc">
+        <Shortcut Id="DesktopShortcut"
+                  Name="Overwatch Studio"
+                  Description="Software-Defined Production Mixer"
+                  Target="[INSTALLFOLDER]overwatch_studio.exe"
+                  WorkingDirectory="INSTALLFOLDER" />
+        <RegistryValue Root="HKCU" Key="Software\Antigravity AI\Overwatch Studio"
+                       Name="desktopShortcut" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </StandardDirectory>
+
+  </Package>
+
+</Wix>
