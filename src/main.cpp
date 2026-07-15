@@ -38,13 +38,35 @@ void qtMessageHandler(QtMsgType type, const QMessageLogContext &context, const Q
 }
 
 int main(int argc, char *argv[]) {
+    // Ensure Qt runtime DLLs are findable when loading QML plugins.
+    // The plugins live under libs/Qt/.../qml/ but depend on DLLs in libs/Qt/.../bin/.
+    auto exeDir = std::filesystem::absolute(std::filesystem::path(argv[0])).parent_path();
+    std::string qtBinDir;
+    // Walk up from the exe dir to find libs/Qt/6.6.2/msvc2019_64/bin
+    auto candidate = exeDir;
+    for (int i = 0; i < 10 && candidate.has_parent_path(); ++i) {
+        auto qtBin = candidate / "libs/Qt/6.6.2/msvc2019_64/bin";
+        if (std::filesystem::exists(qtBin)) {
+            qtBinDir = qtBin.string();
+            break;
+        }
+        candidate = candidate.parent_path();
+    }
+    if (!qtBinDir.empty()) {
+        char* currentPath = nullptr;
+        size_t len = 0;
+        _dupenv_s(&currentPath, &len, "PATH");
+        std::string newPath = qtBinDir + ";" + (currentPath ? currentPath : "");
+        _putenv_s("PATH", newPath.c_str());
+        free(currentPath);
+    }
+
     QQuickStyle::setStyle("Basic");
     RealtimeLogger::getInstance().start("overwatch_studio_realtime.log");
     qInstallMessageHandler(qtMessageHandler);
 
     // Bootstrapping: Ensure default showfile exists
-    auto appDir = std::filesystem::absolute(std::filesystem::path(argv[0]).parent_path());
-    std::filesystem::path assetsDir = appDir / "assets/shows";
+    std::filesystem::path assetsDir = exeDir / "assets/shows";
     if (!std::filesystem::exists(assetsDir)) {
         // Also try relative to repo root
         assetsDir = "assets/shows";
