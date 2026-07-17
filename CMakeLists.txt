@@ -233,7 +233,12 @@ add_executable(overwatch_studio
 qt_add_qml_module(overwatch_studio
     URI overwatch_studio
     VERSION 1.0
-    QML_FILES src/ui/Main.qml
+    QML_FILES
+        src/ui/Main.qml
+        src/ui/MasterLauncher.qml
+        src/ui/AudioConsole.qml
+        src/ui/VideoSwitcher.qml
+        src/ui/ShowBuilder.qml
 )
 
 target_link_libraries(overwatch_studio PRIVATE

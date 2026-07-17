@@ -108,10 +108,10 @@ int main(int argc, char *argv[]) {
         const char* qrcPath;
     };
     const WindowDef windows[] = {
-        {"MasterLauncher", "src/ui/MasterLauncher.qml", "qrc:/qt/qml/overwatch_studio/src/ui/MasterLauncher.qml"},
-        {"AudioConsole",   "src/ui/AudioConsole.qml",   "qrc:/qt/qml/overwatch_studio/src/ui/AudioConsole.qml"},
-        {"VideoSwitcher",  "src/ui/VideoSwitcher.qml",  "qrc:/qt/qml/overwatch_studio/src/ui/VideoSwitcher.qml"},
-        {"ShowBuilder",    "src/ui/ShowBuilder.qml",    "qrc:/qt/qml/overwatch_studio/src/ui/ShowBuilder.qml"},
+        {"MasterLauncher", "src/ui/MasterLauncher.qml", "qrc:/overwatch_studio/src/ui/MasterLauncher.qml"},
+        {"AudioConsole",   "src/ui/AudioConsole.qml",   "qrc:/overwatch_studio/src/ui/AudioConsole.qml"},
+        {"VideoSwitcher",  "src/ui/VideoSwitcher.qml",  "qrc:/overwatch_studio/src/ui/VideoSwitcher.qml"},
+        {"ShowBuilder",    "src/ui/ShowBuilder.qml",    "qrc:/overwatch_studio/src/ui/ShowBuilder.qml"},
     };
 
     std::vector<QQmlApplicationEngine*> engines;
